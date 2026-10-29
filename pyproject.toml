@@ -1,0 +1,22 @@
+[project]
+name = "practiceapp"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "scanyameres", email = "scanyameres@gmail.com" }
+]
+requires-python = ">=3.15"
+dependencies = [
+    "openai>=3.30.0",
+    "IPython",
+    "tiktoken",
+    "streamlit",
+]
+
+[project.scripts]
+practiceapp = "practiceapp:main"
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
