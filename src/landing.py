@@ -1,3 +1,15 @@
+"""Main Streamlit page of Interview Practice Studio.
+
+Run with: uv run streamlit run src\\landing.py
+
+Layout:
+- Sidebar: inputs to build a prep brief, plus an optional login at the bottom.
+- Main area: the generated prep brief and a tab to practice answers.
+
+Streamlit reruns this whole script on every user interaction, so anything that must survive
+between interactions (the current plan, login status) is kept in st.session_state.
+"""
+
 from pathlib import Path
 
 import streamlit as st
@@ -6,10 +18,12 @@ from streamlit_authenticator.utilities import LoginError
 
 from practiceapp.prep import PreparationPlan, build_preparation_plan
 
+# Auth settings and users (gitignored, contains secrets). Template: config.example.yaml.
 AUTH_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
 st.set_page_config(page_title="Interview Practice Studio", page_icon="✳️", layout="wide")
 
+# --- Sidebar: brief inputs ---
 with st.sidebar:
     st.title("✳️ Practice Studio")
     st.caption("A practical first step toward your next interview.")
@@ -30,6 +44,7 @@ with st.sidebar:
             height=180,
         )
 
+    # Validate inputs, build the plan, store it in session state, then rerun to show it.
     if st.button("Build my prep brief", type="primary", width="stretch"):
         if not role_title.strip():
             st.error("Add a role title to continue.")
@@ -44,7 +59,8 @@ with st.sidebar:
             st.session_state.pop("saved_practice_answer", None)
             st.rerun()
 
-    # Optional login: the app works fully without it.
+    # --- Sidebar: optional login (streamlit-authenticator, see docs/streamlit-auth.md) ---
+    # The app works fully without it; logged-in users will later get saved history.
     st.divider()
     if not AUTH_CONFIG_PATH.exists():
         st.caption("Login unavailable: copy `config.example.yaml` to `config.yaml` to enable it.")
@@ -69,11 +85,13 @@ with st.sidebar:
                 elif new_status is False:
                     st.error("Username/password is incorrect")
 
+# --- Main area ---
 st.title("Interview Practice Studio")
 st.write("Prepare for a role, explore likely interview topics, and practice your answers.")
 
 plan = st.session_state.get("preparation_plan")
 if not isinstance(plan, PreparationPlan):
+    # No brief yet: show a short introduction.
     st.info("Enter a role title or job description in the sidebar to get started.")
     st.subheader("What you can do")
     first, second = st.columns(2)
@@ -84,6 +102,7 @@ if not isinstance(plan, PreparationPlan):
         st.markdown("**Practice an answer**")
         st.write("Draft a response and review its context, actions, and outcome.")
 else:
+    # A brief exists: show its summary, then the brief and practice tabs.
     st.subheader(f"{plan.role_title} · {plan.seniority}")
     st.write(plan.role_summary)
 
@@ -126,6 +145,7 @@ else:
             text=f"{completed_checks} of {len(checks)} answer elements covered",
         )
 
+        # For now the draft lives only in session state; it will become the per-user history.
         if st.button("Save practice draft", type="primary"):
             if not answer.strip():
                 st.warning("Write a few notes before saving your practice draft.")

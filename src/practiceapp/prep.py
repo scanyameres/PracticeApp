@@ -1,4 +1,11 @@
-"""Local, deterministic interview-preparation content for the Streamlit prototype."""
+"""Local, deterministic interview-preparation content for the Streamlit prototype.
+
+Builds a PreparationPlan from a role title (and optional job description) using fixed
+role profiles and keyword matching. No Streamlit code and no external services, so it can
+be unit tested on its own (see tests/test_prep.py).
+
+Public entry point: build_preparation_plan().
+"""
 
 from dataclasses import dataclass
 import re
@@ -6,6 +13,8 @@ import re
 
 @dataclass(frozen=True)
 class PracticeQuestion:
+    """One interview question, with its category and why it is worth preparing."""
+
     category: str
     prompt: str
     why_it_matters: str
@@ -13,6 +22,8 @@ class PracticeQuestion:
 
 @dataclass(frozen=True)
 class PreparationPlan:
+    """The prep brief shown in the app: role summary, focus areas and practice questions."""
+
     role_title: str
     seniority: str
     role_summary: str
@@ -22,6 +33,8 @@ class PreparationPlan:
 
 @dataclass(frozen=True)
 class _RoleProfile:
+    """Internal template for one role family; chosen when any match_terms appear in the input."""
+
     key: str
     match_terms: tuple[str, ...]
     summary: str
@@ -29,6 +42,8 @@ class _RoleProfile:
     questions: tuple[PracticeQuestion, ...]
 
 
+# Fixed role templates. Order matters: the first profile whose match_terms appear wins,
+# and the last one ("General") is the fallback.
 _ROLE_PROFILES = (
     _RoleProfile(
         key="Software engineering",
@@ -176,6 +191,7 @@ _ROLE_PROFILES = (
     ),
 )
 
+# Skills recognised in the role title or job description; a match adds a role-specific question.
 _SKILL_TERMS = (
     "Python", "SQL", "TypeScript", "Java", "AWS", "Azure", "Google Cloud",
     "APIs", "Kubernetes", "experimentation", "A/B testing", "analytics",
@@ -186,6 +202,7 @@ _SKILL_TERMS = (
 
 
 def _select_profile(role_text: str) -> _RoleProfile:
+    """Return the first profile whose match terms appear in the text, else the General one."""
     normalized_role = role_text.casefold()
     for profile in _ROLE_PROFILES[:-1]:
         if any(term in normalized_role for term in profile.match_terms):
@@ -194,6 +211,7 @@ def _select_profile(role_text: str) -> _RoleProfile:
 
 
 def _matching_skills(text: str) -> tuple[str, ...]:
+    """Return the known skills found in the text as whole words, case-insensitive."""
     normalized_text = text.casefold()
     return tuple(
         skill for skill in _SKILL_TERMS
@@ -206,7 +224,11 @@ def build_preparation_plan(
     job_description: str = "",
     seniority: str = "Mid-level",
 ) -> PreparationPlan:
-    """Create a transparent role-based prep outline without external services."""
+    """Create a transparent role-based prep outline without external services.
+
+    Picks a role profile, puts up to two detected skills first in the focus areas, adds a
+    skill question (if any) plus two general questions, and keeps at most 7 questions.
+    """
     title = role_title.strip() or "Your next role"
     profile = _select_profile(f"{title} {job_description}")
     matched_skills = _matching_skills(f"{title} {job_description}")
