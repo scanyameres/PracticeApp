@@ -1,0 +1,14 @@
+# Copy to config.yaml (gitignored) and fill in. Structure follows docs/streamlit-auth.md.
+cookie:
+  expiry_days: 30
+  key: change-me-to-a-long-random-string
+  name: practice_studio_auth
+credentials:
+  usernames:
+    demo:
+      email: demo@example.com
+      failed_login_attempts: 0 # Will be managed automatically
+      first_name: Demo
+      last_name: User
+      logged_in: False # Will be managed automatically
+      password: change-me # Will be hashed automatically

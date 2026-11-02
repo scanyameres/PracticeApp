@@ -12,6 +12,7 @@ dependencies = [
     "IPython",
     "tiktoken",
     "streamlit",
+    "streamlit-authenticator>=0.4.2",
 ]
 
 [project.scripts]
