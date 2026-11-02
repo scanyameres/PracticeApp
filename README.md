@@ -14,20 +14,20 @@ Use the sidebar to enter a role title or paste a job description. The app builds
 a local preparation brief with focus areas and practice questions, then lets you
 draft and self-review an answer.
 
-## Authenticated page
+## Optional login
 
-`src\auth_landing.py` is a login-protected page built with
+Everything works without an account. Users can optionally log in from the bottom
+of the sidebar, built with
 [streamlit-authenticator](https://github.com/mkhorasani/streamlit-authenticator)
-(API reference: `docs\streamlit-auth.md`).
+(API reference: `docs\streamlit-auth.md`). Logging in or out keeps the current brief.
+
+To enable it:
 
 1. Copy `config.example.yaml` to `config.yaml` (gitignored).
 2. Set `cookie.key` to a long random string and add users under `credentials`.
    Plain-text passwords are hashed into `config.yaml` on first login.
-3. Run:
 
-```powershell
-uv run streamlit run src\auth_landing.py
-```
+Without `config.yaml`, the sidebar shows a note and the rest of the app runs normally.
 
 ## Prototype scope
 

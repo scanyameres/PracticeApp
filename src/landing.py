@@ -1,7 +1,12 @@
+from pathlib import Path
+
 import streamlit as st
+import streamlit_authenticator as stauth
+from streamlit_authenticator.utilities import LoginError
 
 from practiceapp.prep import PreparationPlan, build_preparation_plan
 
+AUTH_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
 st.set_page_config(page_title="Interview Practice Studio", page_icon="✳️", layout="wide")
 
@@ -38,6 +43,31 @@ with st.sidebar:
             )
             st.session_state.pop("saved_practice_answer", None)
             st.rerun()
+
+    # Optional login: the app works fully without it.
+    st.divider()
+    if not AUTH_CONFIG_PATH.exists():
+        st.caption("Login unavailable: copy `config.example.yaml` to `config.yaml` to enable it.")
+    else:
+        # login_sleep_time=0: skip the library's default 0.7 s pause on every rerun while logged out.
+        authenticator = stauth.Authenticate(str(AUTH_CONFIG_PATH), login_sleep_time=0)
+        auth_status = st.session_state.get("authentication_status")
+        if auth_status:
+            st.write(f"Signed in as **{st.session_state.get('name')}**")
+            authenticator.logout(location="main", key="Logout")
+            if not st.session_state.get("authentication_status"):
+                st.rerun()  # redraw the sidebar as logged out right away
+        else:
+            with st.expander("Log in to save your work", expanded=auth_status is False):
+                try:
+                    authenticator.login(location="main")
+                except LoginError as e:
+                    st.error(e)
+                new_status = st.session_state.get("authentication_status")
+                if new_status:
+                    st.rerun()  # redraw the sidebar as signed in right away
+                elif new_status is False:
+                    st.error("Username/password is incorrect")
 
 st.title("Interview Practice Studio")
 st.write("Prepare for a role, explore likely interview topics, and practice your answers.")
