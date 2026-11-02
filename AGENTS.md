@@ -47,6 +47,9 @@ Use `uv` for everything:
 - `src/practiceapp/`: importable package for app logic. No Streamlit code here, so it stays testable.
 - `tests/`: unit tests for the package.
 
+`ARCHITECTURE.md` (local only, not in git) is an agent-written overview with diagrams. Use it as
+orientation, not as truth: it may be outdated, so check the code before relying on it.
+
 ## Authentication
 
 - Built with streamlit-authenticator. Follow `docs/streamlit-auth.md`; if it does not cover
