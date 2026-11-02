@@ -1,7 +1,7 @@
 [project]
 name = "practiceapp"
 version = "0.1.0"
-description = "Add your description here"
+description = "Interview Practice Studio: a Streamlit app for preparing for job interviews"
 readme = "README.md"
 authors = [
     { name = "scanyameres", email = "scanyameres@gmail.com" }
@@ -14,9 +14,6 @@ dependencies = [
     "streamlit",
     "streamlit-authenticator>=0.4.2",
 ]
-
-[project.scripts]
-practiceapp = "practiceapp:main"
 
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14.0"]

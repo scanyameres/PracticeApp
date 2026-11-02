@@ -4,25 +4,40 @@ A Streamlit proof of concept for preparing for job interviews.
 
 ## Run locally
 
-From the project root, run:
+From the project root, run the open landing page (or double-click `run_app.bat`):
 
 ```powershell
-.\.venv\Scripts\python.exe -m streamlit run .\src\landing.py
+uv run streamlit run src\landing.py
 ```
 
 Use the sidebar to enter a role title or paste a job description. The app builds
 a local preparation brief with focus areas and practice questions, then lets you
 draft and self-review an answer.
 
+## Authenticated page
+
+`src\auth_landing.py` is a login-protected page built with
+[streamlit-authenticator](https://github.com/mkhorasani/streamlit-authenticator)
+(API reference: `docs\streamlit-auth.md`).
+
+1. Copy `config.example.yaml` to `config.yaml` (gitignored).
+2. Set `cookie.key` to a long random string and add users under `credentials`.
+   Plain-text passwords are hashed into `config.yaml` on first login.
+3. Run:
+
+```powershell
+uv run streamlit run src\auth_landing.py
+```
+
 ## Prototype scope
 
 - Role prompts are selected using simple, deterministic local rules.
 - Job-description text can surface a small set of recognized skills.
 - Drafts and selections live only in the current Streamlit browser session.
-- The app does not call an AI service, persist data, or estimate role suitability.
+- The app does not call an AI service or estimate role suitability.
 
-Run the focused tests with:
+## Tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests
+uv run python -m unittest discover -s tests
 ```

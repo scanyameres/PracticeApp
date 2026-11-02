@@ -9,7 +9,7 @@ from pathlib import Path
 
 import streamlit as st
 import streamlit_authenticator as stauth
-from streamlit_authenticator.utilities import DeprecationError, LoginError
+from streamlit_authenticator.utilities import LoginError
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
@@ -22,11 +22,7 @@ if not CONFIG_PATH.exists():
     )
     st.stop()
 
-try:
-    authenticator = stauth.Authenticate(str(CONFIG_PATH))
-except DeprecationError as e:
-    st.error(e)
-    st.stop()
+authenticator = stauth.Authenticate(str(CONFIG_PATH))
 
 st.title("✳️ Interview Practice Studio")
 
@@ -40,17 +36,7 @@ if st.session_state.get("authentication_status"):
         st.write(f"Signed in as **{st.session_state.get('name')}**")
         authenticator.logout(location="sidebar", key="Logout")
 
-    st.success(f"Welcome *{st.session_state.get('name')}*")
-    st.write("Prepare for a role, explore likely interview topics, and practice your answers.")
-
-    st.subheader("What you can do")
-    first, second = st.columns(2)
-    with first:
-        st.markdown("**Prepare with focus**")
-        st.write("Get role-relevant topics and example questions to explore.")
-    with second:
-        st.markdown("**Practice an answer**")
-        st.write("Draft a response and review its context, actions, and outcome.")
+    st.write("Your app starts here.")
 elif st.session_state.get("authentication_status") is False:
     st.error("Username/password is incorrect")
 elif st.session_state.get("authentication_status") is None:

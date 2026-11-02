@@ -25,7 +25,7 @@ with st.sidebar:
             height=180,
         )
 
-    if st.button("Build my prep brief", type="primary", use_container_width=True):
+    if st.button("Build my prep brief", type="primary", width="stretch"):
         if not role_title.strip():
             st.error("Add a role title to continue.")
         elif input_mode == "Job description" and not job_description.strip():
@@ -38,9 +38,6 @@ with st.sidebar:
             )
             st.session_state.pop("saved_practice_answer", None)
             st.rerun()
-
-    st.divider()
-    st.caption("Prototype: local role patterns only. No AI, external API, or suitability score.")
 
 st.title("Interview Practice Studio")
 st.write("Prepare for a role, explore likely interview topics, and practice your answers.")
@@ -60,26 +57,19 @@ else:
     st.subheader(f"{plan.role_title} · {plan.seniority}")
     st.write(plan.role_summary)
 
-    metrics = st.columns(3)
+    metrics = st.columns(2)
     metrics[0].metric("Practice questions", len(plan.questions))
     metrics[1].metric("Focus areas", len(plan.focus_areas))
-    metrics[2].metric("Suitability estimate", "Not assessed")
 
     brief_tab, practice_tab = st.tabs(("Prep brief", "Practice an answer"))
     with brief_tab:
         st.subheader("Topics worth preparing")
         st.write(" · ".join(plan.focus_areas))
         st.subheader("Questions to explore")
-        st.caption("These are starting points, not predictions of exactly what an interviewer will ask.")
         for index, question in enumerate(plan.questions, start=1):
             with st.expander(f"{index}. {question.prompt}"):
                 st.markdown(f"**{question.category}**")
                 st.write(question.why_it_matters)
-
-        st.info(
-            "A meaningful suitability estimate needs your experience and evidence from the job criteria. "
-            "This prototype avoids inventing a score."
-        )
 
     with practice_tab:
         st.subheader("Rehearse a response")
