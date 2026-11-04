@@ -30,3 +30,18 @@ I have added some landing.py for a basic frontend with streamlit. Verify if ther
 
 No need to add start_app.bat to the readme nor Architecture.md for now
 
+
+## 2026-11-04 22:43  (session 25c4de1f)
+
+I have a huge chunk of code commented out, but it is actually displayed by streamlit as plain text. It goes from line 61 to 86 aprox. How can I actually comment out whole sections in python/streamlit?
+
+
+## 2026-11-04 23:16  (session 25c4de1f)
+
+Why do I get this error "module 'scanya_ae_afa_updated0209_1_6.core' has no attribute 'build_preparation_plan_generic'" if I am importing the scanya... .core correctly as appcore and it has indeed a function with such name?
+
+
+## 2026-11-04 23:19  (session 25c4de1f)
+
+Ok, now it doesnt break, but nothing happens when I click on "Build my prep brief". What is missing to the "build preparation plan generic" path?
+
