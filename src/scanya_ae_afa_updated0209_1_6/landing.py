@@ -112,51 +112,54 @@ else:
     brief_tab, practice_tab = st.tabs(("Prep brief", "Practice an answer"))
     with brief_tab:
         st.subheader("Questions to explore")
-        for index, question in enumerate(plan.questions, start=1):
-            with st.expander(f"{index}. {question.prompt}"):
-                st.markdown(f"**{question.category}**")
-                st.write(question.why_it_matters)
+        if input_mode == "Generic role title and experience":
+            for index, question in enumerate(plan.questions, start=1):
+                with st.expander(f"{index}. {question.prompt}"):
+                    st.markdown(f"**{question.category}**")
+                    st.write(question.why_it_matters)
+        elif input_mode == "Specific job opening":
+            st.write(plan.questions)
 
-    with practice_tab:
-        st.subheader("Rehearse a response")
-        question_options = [question.prompt for question in plan.questions]
-        selected_prompt = st.selectbox("Choose a question", question_options, key="practice_question")
-        selected_question = next(question for question in plan.questions if question.prompt == selected_prompt)
-        st.caption(f"{selected_question.category} · {selected_question.why_it_matters}")
+    # with practice_tab:
+    #     st.subheader("Rehearse a response")
+    #     question_options = [question.prompt for question in plan.questions]
+    #     selected_prompt = st.selectbox("Choose a question", question_options, key="practice_question")
+    #     selected_question = next(question for question in plan.questions if question.prompt == selected_prompt)
+    #     st.caption(f"{selected_question.category} · {selected_question.why_it_matters}")
 
-        answer = st.text_area(
-            "Draft your answer",
-            placeholder="What was happening, what did you do, and what changed?",
-            height=190,
-            key="practice_answer",
-        )
-        st.markdown("**Quick self-review**")
-        checks = (
-            st.checkbox("I set the context", key="review_context"),
-            st.checkbox("I explained my actions", key="review_actions"),
-            st.checkbox("I shared an outcome", key="review_outcome"),
-        )
-        completed_checks = sum(checks)
-        st.progress(
-            completed_checks / len(checks),
-            text=f"{completed_checks} of {len(checks)} answer elements covered",
-        )
+    #     answer = st.text_area(
+    #         "Draft your answer",
+    #         placeholder="What was happening, what did you do, and what changed?",
+    #         height=190,
+    #         key="practice_answer",
+    #     )
+    #     st.markdown("**Quick self-review**")
+    #     checks = (
+    #         st.checkbox("I set the context", key="review_context"),
+    #         st.checkbox("I explained my actions", key="review_actions"),
+    #         st.checkbox("I shared an outcome", key="review_outcome"),
+    #     )
+    #     completed_checks = sum(checks)
+    #     st.progress(
+    #         completed_checks / len(checks),
+    #         text=f"{completed_checks} of {len(checks)} answer elements covered",
+    #     )
 
-        # For now the draft lives only in session state; it will become the per-user history.
-        if st.button("Save practice draft", type="primary"):
-            if not answer.strip():
-                st.warning("Write a few notes before saving your practice draft.")
-            else:
-                st.session_state["saved_practice_answer"] = {
-                    "question": selected_prompt,
-                    "answer": answer.strip(),
-                    "checks": completed_checks,
-                }
-                st.success("Draft saved in this browser session.")
+    #     # For now the draft lives only in session state; it will become the per-user history.
+    #     if st.button("Save practice draft", type="primary"):
+    #         if not answer.strip():
+    #             st.warning("Write a few notes before saving your practice draft.")
+    #         else:
+    #             st.session_state["saved_practice_answer"] = {
+    #                 "question": selected_prompt,
+    #                 "answer": answer.strip(),
+    #                 "checks": completed_checks,
+    #             }
+    #             st.success("Draft saved in this browser session.")
 
-        saved_answer = st.session_state.get("saved_practice_answer")
-        if saved_answer and saved_answer["question"] == selected_prompt:
-            st.caption("Your draft is held in Streamlit session state, not stored permanently.")
+    #     saved_answer = st.session_state.get("saved_practice_answer")
+    #     if saved_answer and saved_answer["question"] == selected_prompt:
+    #         st.caption("Your draft is held in Streamlit session state, not stored permanently.")
 
 st.divider()
 st.caption("Early prototype · Prep suggestions are illustrative, not an assessment.")

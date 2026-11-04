@@ -9,6 +9,7 @@ Public entry point: build_preparation_plan().
 
 from dataclasses import dataclass
 import re
+from scanya_ae_afa_updated0209_1_6.config import get_client
 
 
 @dataclass(frozen=True)
@@ -200,45 +201,6 @@ def _select_profile(role_text: str) -> _RoleProfile:
     return _ROLE_PROFILES[-1]
 
 
-def build_preparation_plan(
-    role_title: str,
-    job_description: str = "",
-    seniority: str = "Mid-level",
-) -> PreparationPlan:
-    """Create a transparent role-based prep outline without external services.
-
-    Picks a role profile, puts up to two detected skills first in the focus areas, adds a
-    skill question (if any) plus two general questions, and keeps at most 7 questions.
-    """
-    title = role_title.strip() or "Your next role"
-    profile = _select_profile(f"{title} {job_description}")
-    matched_skills = _matching_skills(f"{title} {job_description}")
-    focus_areas = tuple(dict.fromkeys((*matched_skills[:2], *profile.focus_areas)))[:5]
-
-    questions = list(profile.questions)
-    if matched_skills:
-        skill = matched_skills[0]
-        questions.insert(
-            0,
-            PracticeQuestion(
-                "Role-specific",
-                f"How have you used {skill} to solve a problem relevant to this role?",
-                f"The role description mentions {skill}; prepare a specific example and its outcome.",
-            ),
-        )
-    questions.extend(
-        (
-            PracticeQuestion(
-                "Behavioral", "Tell me about a time you received feedback and what you did with it.",
-                "Shows self-awareness and how you turn feedback into action.",
-            ),
-            PracticeQuestion(
-                "Motivation", f"Why does this {seniority.lower()} {title} role interest you?",
-                "Connects your experience and interests to the opportunity.",
-            ),
-        )
-    )
-
 def build_preparation_plan_generic(
     role_title: str,
     seniority: str = "Mid-level",
@@ -279,25 +241,50 @@ def build_preparation_plan_opening(
     Picks a role profile, puts up to two detected skills first in the focus areas, adds a
     skill question (if any) plus two general questions, and keeps at most 7 questions.
     """
-    title = role_title.strip() or "Your next role"
-    profile = _select_profile(f"{title} {job_description}")
 
-    questions = list(profile.questions)
-    questions.extend(
-        (
-            PracticeQuestion(
-                "Behavioral", "Tell me about a time you received feedback and what you did with it.",
-                "Shows self-awareness and how you turn feedback into action.",
-            ),
-            PracticeQuestion(
-                "Motivation", f"Why does this {seniority.lower()} {title} role interest you?",
-                "Connects your experience and interests to the opportunity.",
-            ),
-        )
+    client = get_client("OpenRouter")
+    APP_MODEL = "openai/gpt-6-luna"
+    #system_prompt = ("You are an expert at analyzing job descriptions and extracting relevant information for interview preparation. Your task is to read the provided job description and generate a concise summary of the role, including the role title, seniority level, key responsibilities, and any specific skills or qualifications mentioned. Additionally, identify up to 5 potential interview questions that a candidate might be asked based on the job description. Format your response in JSON with the following structure:\n\n{\n  \"role_title\": \"\",\n  \"seniority\": \"\",\n  \"role_summary\": \"\",\n  \"questions\": [\"\", \"\", \"\", \"\", \"\"]\n}\n\nEnsure that the JSON is valid and properly formatted.")
+    system_prompt = "Open this job description, read about the job description, and extract the role title. Then prepare 5 questions"
+    user_prompt = f"Job description: {job_description}"
+    #JUDGE_MODEL = "openai/gpt-5.4-mini"
+
+    # Verify the application-model connection
+    response = client.chat.completions.create(
+        model=APP_MODEL,
+        messages=[{"role": "user", "content": "Say 'connection OK' in exactly two words."}],
     )
+    print("API check:", response.choices[0].message.content)
+  
+    response = client.chat.completions.create(
+        model=APP_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    )
+    llm_questions = response.choices[0].message.content
     return PreparationPlan(
-        role_title=title,
-        seniority=seniority,
-        role_summary=profile.summary,
-        questions=tuple(questions[:7]),
+        role_title="Placeholder role",
+        seniority="Placeholder exp",
+        role_summary="Placeholder summary",
+        questions=llm_questions
     )
+    # questions.extend(
+    #     (
+    #         PracticeQuestion(
+    #             "Behavioral", "Tell me about a time you received feedback and what you did with it.",
+    #             "Shows self-awareness and how you turn feedback into action.",
+    #         ),
+    #         PracticeQuestion(
+    #             "Motivation", f"Why does this {seniority.lower()} {title} role interest you?",
+    #             "Connects your experience and interests to the opportunity.",
+    #         ),
+    #     )
+    # )
+    # return PreparationPlan(
+    #     role_title=title,
+    #     seniority=seniority,
+    #     role_summary=profile.summary,
+    #     questions=tuple(questions[:7]),
+    # )
