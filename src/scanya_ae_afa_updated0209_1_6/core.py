@@ -1,10 +1,9 @@
 """Interview-preparation logic for the app (no Streamlit code).
 
-Builds a PreparationPlan in one of two ways:
-- build_preparation_plan_generic(): from a role title and seniority, using fixed role
-  profiles and keyword matching. Local and deterministic, no API calls.
-- build_preparation_plan_opening(): from a job description or URL, using the LLM via
-  OpenRouter with structured output (prompts live in prompts.py).
+Builds a PreparationPlan with the LLM (OpenRouter, structured output; prompts in prompts.py):
+- build_preparation_plan_generic(): from a role title and seniority. If the LLM call fails,
+  falls back to fixed role profiles (keyword matching, no API call) and says so.
+- build_preparation_plan_opening(): from a job description or URL.
 
 And, separately:
 - assess_fit_and_write_cover_letter(): from the user's CV and a job opening, one LLM call
@@ -53,6 +52,8 @@ class PreparationPlan:
     seniority: str
     role_summary: str
     questions: tuple[PracticeQuestion, ...]
+    # Set when the LLM failed and stored backup questions are shown instead (the error text).
+    fallback_reason: str | None = None
 
 
 class _LLMPlan(BaseModel):
@@ -91,7 +92,7 @@ class _RoleProfile:
     questions: tuple[PracticeQuestion, ...]
 
 
-# Fixed role templates. Order matters: the first profile whose match_terms appear wins,
+# Fixed role templates, used only as a backup when the LLM call fails. Order matters: the first profile whose match_terms appear wins,
 # and the last one ("General") is the fallback.
 _ROLE_PROFILES = (
     _RoleProfile(
@@ -253,14 +254,43 @@ def _select_profile(role_text: str) -> _RoleProfile:
 def build_preparation_plan_generic(
     role_title: str,
     seniority: str = "Mid-level",
+    difficulty: str = "Medium",
+    model: str = DEFAULT_MODEL,
+    temperature: float | None = None,
 ) -> PreparationPlan:
-    """Build a generic prep plan from a role title, without calling the LLM.
+    """Build a prep plan from a role title and experience level using the LLM.
+
+    Same LLM call as build_preparation_plan_opening(), with the role and seniority instead of
+    a job description. If the call fails for any reason (API error, invalid key, refusal,
+    unusable output), returns the stored backup questions (_fallback_plan) with
+    `fallback_reason` set, so the user still gets a brief and the UI can show a warning.
+    """
+    user_prompt = prompts.GENERIC_ROLE_USER_PROMPT_TEMPLATE.format(
+        role_title=role_title.strip(),
+        seniority=seniority,
+        difficulty_instruction=prompts.DIFFICULTY_INSTRUCTIONS[difficulty],
+    )
+    try:
+        llm_plan = _ask_llm(prompts.GENERIC_ROLE_SYSTEM_PROMPT, user_prompt, _LLMPlan, model, temperature)
+    except Exception as error:  # Any LLM problem: use the backup questions instead.
+        return _fallback_plan(role_title, seniority, fallback_reason=str(error))
+
+    return PreparationPlan(
+        role_title=llm_plan.role_title,
+        seniority=llm_plan.seniority,
+        role_summary=llm_plan.role_summary,
+        questions=tuple(llm_plan.questions),
+    )
+
+
+def _fallback_plan(role_title: str, seniority: str, fallback_reason: str) -> PreparationPlan:
+    """Backup plan from the stored role profiles, used when the LLM call fails. No API call.
 
     Picks the matching role profile (or the General one) and returns its summary and
     questions, plus a behavioral and a motivation question.
     """
     title = role_title.strip() or "Your next role"
-    profile = _select_profile(f"{title}")
+    profile = _select_profile(title)
 
     questions = list(profile.questions)
     questions.extend(
@@ -279,8 +309,10 @@ def build_preparation_plan_generic(
         role_title=title,
         seniority=seniority,
         role_summary=profile.summary,
-        questions=tuple(questions[:7]),
+        questions=tuple(questions),
+        fallback_reason=fallback_reason,
     )
+
 
 def build_preparation_plan_opening(
     job_description: str = "",
@@ -336,6 +368,16 @@ def assess_fit_and_write_cover_letter(
         cv=cv, job_description=_job_text(job_description)
     )
     return _ask_llm(prompts.FIT_SYSTEM_PROMPT, user_prompt, FitAssessment, model, temperature)
+
+
+def describe_generic_role(role_title: str, seniority: str) -> str:
+    """Build a stand-in job description for a generic role, so the fit check works without a posting.
+
+    Pass the result to assess_fit_and_write_cover_letter() as `job_description`.
+    """
+    return prompts.GENERIC_ROLE_JOB_TEMPLATE.format(
+        seniority=seniority, role_title=role_title.strip()
+    )
 
 
 def _job_text(job_input: str) -> str:

@@ -1,4 +1,4 @@
-"""Streamlit UI: an input dashboard (CV + job), action buttons, and a results area in tabs.
+"""Streamlit UI: three input sections (role/job, CV, settings), action buttons, results in tabs.
 
 Run with start_app.bat (or `uv run streamlit run src/scanya_ae_afa_updated0209_1_6/landing.py`).
 All logic lives in core.py; this file only collects inputs, calls core and shows results.
@@ -11,6 +11,7 @@ import streamlit as st
 #from streamlit_authenticator.utilities import LoginError
 
 import scanya_ae_afa_updated0209_1_6.core as appcore
+from scanya_ae_afa_updated0209_1_6 import cv_reader
 
 # Auth settings and users (gitignored, contains secrets). Template: config.example.yaml.
 # AUTH_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
@@ -24,45 +25,16 @@ st.title("✳️ Application Assistant and Interview Practice")
 st.caption("By Sergi Canyameres")
 st.write("Prepare for a role, explore likely interview questions, check how well you fit an opening, and get a cover letter.")
 
-# --- Sidebar: technical settings, kept apart from the main user inputs ---
-with st.sidebar:
-    st.header("⚙️ Settings")
-    # Opting in to temperature switches the model list to TEMPERATURE_MODELS, the only ones
-    # here that accept it. Otherwise temperature stays None and is not sent at all.
-    use_temperature = st.toggle(
-        "Set temperature (experimental)",
-        help="The default models do not accept a temperature setting, so a different model is used.",
-    )
-    model = st.selectbox(
-        "LLM model",
-        appcore.TEMPERATURE_MODELS if use_temperature else appcore.AVAILABLE_MODELS,
-        help="OpenRouter model used for all AI features. The generic role brief does not use a model.",
-    )
-    temperature = None
-    if use_temperature:
-        temperature = st.slider(
-            "Temperature", 0.0, 2.0, 0.7, 0.1,
-            help="Low = focused and repeatable answers. High = more varied and creative, but less reliable.",
-        )
-        st.warning(
-            "**Experimental settings.** This uses a different model than the default ones, which may:\n"
-            "- give lower-quality or less tailored questions and cover letters;\n"
-            "- fail to return the expected format more often, causing errors;\n"
-            "- invent details (e.g. experience not in your CV), especially at high temperature (> 1.0).\n\n"
-            "Review the results carefully. Switch the toggle off to go back to the default models."
-        )
+# --- Inputs: three equal-height sections side by side ---
+# Fixed-height bordered containers keep the three boxes aligned; content scrolls if it overflows.
+SECTION_HEIGHT = 420
+role_section, cv_section, settings_section = st.columns(3)
 
-# --- Inputs: CV on the left, role or job opening on the right ---
-cv_column, job_column = st.columns(2)
-with cv_column:
-    user_cv = st.text_area(
-        "Your CV / resume",
-        placeholder="Paste your CV or resume here. Needed for the fit check and cover letter.",
-        height=250,
-    )
-with job_column:
-    input_mode = st.radio("What are you preparing?", (GENERIC_MODE, OPENING_MODE), horizontal=True)
-    role_title, seniority, job_description, difficulty = "", "", "", "Medium"
+# Left: what the user is preparing for, and the matching inputs.
+with role_section.container(border=True, height=SECTION_HEIGHT):
+    st.markdown("**1 · What are you preparing?**")
+    input_mode = st.radio("Mode", (GENERIC_MODE, OPENING_MODE), label_visibility="collapsed")
+    role_title, seniority, job_description = "", "", ""
     if input_mode == GENERIC_MODE:
         role_title = st.text_input("Role title", value="Software Engineer")
         seniority = st.selectbox(
@@ -74,9 +46,61 @@ with job_column:
         job_description = st.text_area(
             "Job opening URL or description",
             placeholder="Paste the job posting URL or role description...",
-            height=170,
+            height=220,
         )
-        difficulty = st.select_slider("Question difficulty", ("Easy", "Medium", "Hard"), value="Medium")
+
+# Middle: the user's CV, as a PDF (drag and drop) or pasted text. An uploaded PDF wins.
+with cv_section.container(border=True, height=SECTION_HEIGHT):
+    st.markdown("**2 · Your CV / resume**")
+    cv_pdf = st.file_uploader("Drop your CV as PDF", type="pdf")
+    pasted_cv = st.text_area(
+        "...or paste it as text",
+        placeholder="Paste your CV or resume here. Needed for the fit check and cover letter.",
+        height=130,
+        disabled=cv_pdf is not None,
+    )
+    user_cv = pasted_cv
+    if cv_pdf is not None:
+        try:
+            user_cv = cv_reader.read_pdf_text(cv_pdf)
+            st.caption(f"Using the text from {cv_pdf.name} ({len(user_cv):,} characters).")
+        except ValueError as error:
+            user_cv = ""
+            st.error(str(error))
+
+# Right: model and generation settings.
+with settings_section.container(border=True, height=SECTION_HEIGHT):
+    st.markdown("**3 · Settings**")
+    # The temperature toggle is drawn below the model list but decides its options, so read its
+    # current value from session state first. Opting in switches to TEMPERATURE_MODELS, the only
+    # ones that accept it; otherwise temperature stays None and is not sent at all.
+    use_temperature = st.session_state.get("use_temperature", False)
+    model = st.selectbox(
+        "LLM model",
+        appcore.TEMPERATURE_MODELS if use_temperature else appcore.AVAILABLE_MODELS,
+        help="OpenRouter model used for all AI features.",
+    )
+    st.toggle(
+        "Set temperature (experimental)",
+        key="use_temperature",
+        help="The default models do not accept a temperature setting, so a different model is used.",
+    )
+    temperature = None
+    if use_temperature:
+        temperature = st.slider(
+            "Temperature", 0.0, 2.0, 0.7, 0.1,
+            help="Low = focused and repeatable answers. High = more varied and creative, but less reliable.",
+        )
+    difficulty = st.select_slider(
+        "Question difficulty",
+        ("Easy", "Medium", "Hard"),
+        value="Medium",
+    )
+    if use_temperature:
+        st.warning(
+            "**Experimental:** a different model may give lower-quality results, fail to return "
+            "the expected format, or invent details (especially above 1.0). Review results carefully."
+        )
 
 # --- Actions: each button runs one feature and stores its result in session state ---
 brief_column, fit_column = st.columns(2)
@@ -84,8 +108,7 @@ build_brief = brief_column.button("Build my prep brief", type="primary", width="
 check_fit = fit_column.button(
     "Check my fit & write a cover letter",
     width="stretch",
-    disabled=input_mode != OPENING_MODE,
-    help="Needs your CV and a specific job opening.",
+    help="Needs your CV and a role title or job opening.",
 )
 
 if build_brief:
@@ -93,28 +116,39 @@ if build_brief:
         st.error("Add a role title to continue.")
     elif input_mode == OPENING_MODE and not job_description.strip():
         st.error("Paste a job opening URL or description, or switch to a generic role title.")
-    elif input_mode == GENERIC_MODE:
-        st.session_state["preparation_plan"] = appcore.build_preparation_plan_generic(role_title, seniority)
     else:
-        # LLM path: API or parsing errors are shown as a message instead of a traceback.
+        # Both modes call the LLM. The generic one falls back to stored questions by itself
+        # (see plan.fallback_reason); other errors are shown as a message instead of a traceback.
         try:
             with st.spinner("Generating your prep brief..."):
-                st.session_state["preparation_plan"] = appcore.build_preparation_plan_opening(
-                    job_description, difficulty, model, temperature
-                )
+                if input_mode == GENERIC_MODE:
+                    st.session_state["preparation_plan"] = appcore.build_preparation_plan_generic(
+                        role_title, seniority, difficulty, model, temperature
+                    )
+                else:
+                    st.session_state["preparation_plan"] = appcore.build_preparation_plan_opening(
+                        job_description, difficulty, model, temperature
+                    )
         except Exception as error:
             st.error(f"Could not generate the brief: {error}")
 
 if check_fit:
     if not user_cv.strip():
         st.error("Paste your CV to check your fit and get a cover letter.")
-    elif not job_description.strip():
+    elif input_mode == GENERIC_MODE and not role_title.strip():
+        st.error("Add a role title to compare your CV with.")
+    elif input_mode == OPENING_MODE and not job_description.strip():
         st.error("Paste a job opening URL or description to compare your CV with.")
     else:
+        # Generic mode has no posting, so a short description of the role stands in for it.
+        if input_mode == GENERIC_MODE:
+            job_for_fit = appcore.describe_generic_role(role_title, seniority)
+        else:
+            job_for_fit = job_description
         try:
             with st.spinner("Comparing your CV with the job and writing a cover letter..."):
                 st.session_state["fit_assessment"] = appcore.assess_fit_and_write_cover_letter(
-                    user_cv, job_description, model, temperature
+                    user_cv, job_for_fit, model, temperature
                 )
         except Exception as error:
             st.error(f"Could not check your fit: {error}")
@@ -129,6 +163,11 @@ with brief_tab:
     if not isinstance(plan, appcore.PreparationPlan):
         st.info("Click **Build my prep brief** to get likely interview questions for the role.")
     else:
+        if plan.fallback_reason:
+            st.warning(
+                "The AI model could not generate questions, so these are standard backup questions "
+                f"for this type of role.  \nReason: {plan.fallback_reason}"
+            )
         st.subheader(f"{plan.role_title} · {plan.seniority}")
         st.write(plan.role_summary)
         st.markdown(f"**Questions to explore ({len(plan.questions)})**")
@@ -141,7 +180,7 @@ with brief_tab:
 with fit_tab:
     fit = st.session_state.get("fit_assessment")
     if not isinstance(fit, appcore.FitAssessment):
-        st.info("Paste your CV and a job opening, then click **Check my fit & write a cover letter**.")
+        st.info("Add your CV and a role title or job opening, then click **Check my fit & write a cover letter**.")
     else:
         st.metric("Match score", f"{fit.match_score} / 10")
         st.progress(fit.match_score / 10)

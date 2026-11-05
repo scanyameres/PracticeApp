@@ -18,6 +18,25 @@ JOB_OPENING_SYSTEM_PROMPT = (
     "one sentence in 'why_it_matters' explaining what the interviewer wants to learn."
 )
 
+# System prompt for the generic path (role title + experience level, no job description).
+# Same output fields as JOB_OPENING_SYSTEM_PROMPT (the _LLMPlan schema in core.py).
+GENERIC_ROLE_SYSTEM_PROMPT = (
+    "You receive a role title and an experience level. Keep the given 'role_title' and "
+    "'seniority', and write a one-sentence 'role_summary' of what a candidate for this "
+    "role and level should prepare for. Then prepare 5 interview questions a candidate is "
+    "likely to be asked for this role and level. For each question give: a short category "
+    "(e.g. Technical, Behavioral, Motivation), the question itself as 'prompt', and "
+    "one sentence in 'why_it_matters' explaining what the interviewer wants to learn."
+)
+
+# User message for the generic path.
+# Placeholders: {role_title}, {seniority}, {difficulty_instruction} (one of DIFFICULTY_INSTRUCTIONS).
+GENERIC_ROLE_USER_PROMPT_TEMPLATE = (
+    "Role title: {role_title}\n"
+    "Experience level: {seniority}\n\n"
+    "Question difficulty: {difficulty_instruction}"
+)
+
 # --- Alternative system prompts for the job-opening path (task 4: prompting techniques) ---
 # Same task and same output fields as JOB_OPENING_SYSTEM_PROMPT (the zero-shot baseline above),
 # so any of them can replace it in core.py without other changes. Not used by the app yet.
@@ -102,10 +121,18 @@ FIT_SYSTEM_PROMPT = (
     "You are a career advisor. Compare the candidate's CV with the job description. "
     "Give a 'match_score' from 0 (no match) to 10 (perfect match) and a short "
     "'reasoning' (3-5 sentences) naming the main strengths and gaps. Then write a "
-    "'cover_letter' of about 200 words for this position and company that highlights "
+    "'cover_letter' of about 200 words for this position (and company, if one is given) that highlights "
     "the candidate's strengths most relevant to the job. Only use facts from the CV; "
     "do not invent experience."
 )
 
 # User message for the fit check + cover letter. Placeholders: {cv}, {job_description}.
 FIT_USER_PROMPT_TEMPLATE = "CV:\n{cv}\n\nJob description:\n{job_description}"
+
+# Stand-in "job description" for the fit check in generic mode (no real posting).
+# Placeholders: {seniority}, {role_title}. Used by core.describe_generic_role().
+GENERIC_ROLE_JOB_TEMPLATE = (
+    "No specific job posting. Target role: {seniority} {role_title}. Judge the fit against "
+    "what is typically expected for this role and level. Write a general cover letter for "
+    "this kind of role; do not name or invent a specific company."
+)

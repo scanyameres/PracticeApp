@@ -9,9 +9,9 @@ Legend: `[x]` done · `[~]` partially done · `[ ]` not started
 ## Mandatory
 
 - [x] 1. Research the nature of interview preparation you want to do.
-  - Chosen: prep brief with practice questions, from a generic role + seniority (stored role profiles, `_ROLE_PROFILES` in `core.py`) or from a specific job description (LLM, `build_preparation_plan_opening()` in `core.py`).
+  - Chosen: prep brief with practice questions, from a generic role + seniority (`build_preparation_plan_generic()`) or from a specific job description (`build_preparation_plan_opening()`), both via the LLM. If the generic LLM call fails, stored backup questions (`_ROLE_PROFILES` in `core.py`) are shown with a warning.
 - [x] 2. Decide how to build the front-end (Streamlit components or Next.js).
-  - Streamlit (`landing.py`): input dashboard on the main page (CV + role/job side by side, difficulty slider), sidebar Settings for the model, one button per action, results in tabs (incl. a "Practice an answer" placeholder), one expander per question, spinner while the LLM runs, `st.error` if the call fails.
+  - Streamlit (`landing.py`): three equal-height input sections (1 role/job, 2 CV, 3 settings: model, temperature, difficulty), no sidebar, one button per action, results in tabs (incl. a "Practice an answer" placeholder), one expander per question, spinner while the LLM runs, `st.error` if the call fails.
 - [x] 3. Choose an OpenRouter model (`openai/gpt-6-luna`, `anthropic/claude-sonnet-5.5` or `openai/gpt-6.1-sol`; embeddings: `qwen/qwen3-embedding-8b`, `openai/text-embedding-3-small/large`).
   - Default `openai/gpt-6-luna` (`DEFAULT_MODEL` in `core.py`); the user can switch to the other two (see Medium 7). All three support structured outputs and are called through the OpenAI SDK pointed at OpenRouter (`config.get_client()`).
 - [~] 4. Write at least 5 system prompts with different techniques (few-shot, Chain-of-Thought, zero-shot, etc.) and compare which works best.
@@ -25,12 +25,12 @@ Legend: `[x]` done · `[~]` partially done · `[ ]` not started
 - [ ] 2. Improve the prompts for your personal domain (IT, finance, HR, communication, etc.).
 - [ ] 3. More security constraints: user input validation and system prompt validation (possibly LLM-checked).
 - [x] 4. Simulate difficulty levels (easy, medium, hard questions).
-  - "Question difficulty" slider (job-opening mode). The chosen instruction from `DIFFICULTY_INSTRUCTIONS` (`prompts.py`) is added to the user message; the system prompt stays unchanged.
+  - "Question difficulty" slider (both modes). The chosen instruction from `DIFFICULTY_INSTRUCTIONS` (`prompts.py`) is added to the user message; the system prompt stays unchanged.
 - [ ] 5. Optimise prompts for concise vs. detailed responses.
 - [ ] 6. Generate interviewer guidelines (structured evaluation criteria for technical and behavioural interviews).
 - [ ] 7. Mock interview with AI personas (strict, neutral, friendly interviewer).
 - [~] 8. Tune at least one model setting (temperature, max tokens, reasoning effort, etc.) and compare outputs.
-  - Temperature can be set via the sidebar toggle "Set temperature (experimental)" (slider 0-2), which switches to `TEMPERATURE_MODELS` in `core.py` (`google/gemini-3.1-flash-image`): none of the 3 course models accept `temperature`. A warning explains the risks. `temperature` is only sent when set (`_ask_llm()`). Missing: compare outputs at low vs high temperature and note the differences.
+  - Temperature can be set via the toggle in the Settings section "Set temperature (experimental)" (slider 0-2), which switches to `TEMPERATURE_MODELS` in `core.py` (`google/gemini-3.1-flash-image`): none of the 3 course models accept `temperature`. A warning explains the risks. `temperature` is only sent when set (`_ask_llm()`). Missing: compare outputs at low vs high temperature and note the differences.
 
 ## Medium
 
@@ -44,10 +44,10 @@ Legend: `[x]` done · `[~]` partially done · `[ ]` not started
 - [~] 6. Job description field to get prep for that specific position (RAG).
   - Done: "Specific job opening" text area in `landing.py`, inserted into the user prompt (`JOB_OPENING_USER_PROMPT_TEMPLATE`). If a URL is pasted, the page is downloaded and its text sent instead (`web_fetch.py`). Missing: no retrieval (RAG).
 - [x] 7. Let the user choose from a list of LLMs.
-  - "LLM model" select box in the sidebar Settings (`landing.py`), options from `AVAILABLE_MODELS` in `core.py` (the 3 course models, all support structured outputs); passed down to `_ask_llm()`.
+  - "LLM model" select box in the Settings section (`landing.py`), options from `AVAILABLE_MODELS` in `core.py` (the 3 course models, all support structured outputs); passed down to `_ask_llm()`.
 - [ ] 8. Creative use of image generation (`google/gemini-3.1-flash-image`).
 - [ ] 9. Security guard + keep developer settings (model, system prompts) separate from the user experience.
-  - Prompts are separated from the UI (`prompts.py`) and the model choice sits in a separate sidebar Settings panel, but there is no guard yet.
+  - Prompts are separated from the UI (`prompts.py`) and the model choice sits in its own Settings section, but there is no guard yet.
 
 ## Hard
 
@@ -63,7 +63,8 @@ Legend: `[x]` done · `[~]` partially done · `[ ]` not started
 - Project setup with uv, API keys in `.env` (`config.py`), `start_app.bat` to launch the app.
 - Prompts in their own file (`prompts.py`) for easy editing and comparison.
 - LLM errors are caught in `landing.py` and shown with `st.error` instead of a traceback.
-- CV fit check + cover letter: "Check my fit & write a cover letter" button, one LLM call (`assess_fit_and_write_cover_letter()` in `core.py`), shown with score bar, reasoning and a download button.
+- CV fit check + cover letter: "Check my fit & write a cover letter" button, one LLM call (`assess_fit_and_write_cover_letter()` in `core.py`), shown with score bar, reasoning and a download button. Works in both modes: generic roles use a stand-in description (`describe_generic_role()`).
+- CV as PDF: drag-and-drop uploader in the CV section; text extracted with `pypdf` (`cv_reader.py`) and used instead of the pasted text.
 - `Architecture.md` summarises the components and decisions.
 
 ## Annex: prompting techniques used with Claude during development

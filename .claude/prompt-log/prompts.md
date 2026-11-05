@@ -178,3 +178,34 @@ That's great! Let#s allow users to voluntarily select Temperature, which would f
 
 Let's ignore open source model for now. Temperature setting is enough
 
+
+## 2026-11-05 17:00  (session 1b86dc2e)
+
+<ide_opened_file>The user opened the file c:\Users\Sergi\Documents\AI_Engineering\Part1\scanya-AE.AFA.updated0209.1.6\115.md in the IDE. This may or may not be related to the current task.</ide_opened_file>
+Can the current CV input read from a pdf? What would enable that?
+
+
+## 2026-11-05 17:11  (session ef407f0a)
+
+Now rework the frontend. It looks a bit chaotic and text boxes have different sizes. Remove the side bar. Let's have three main sections: Left, What are you preparing, and the current switch between inputs according to that selector. Middle, your CV resume (smaller box as now), to take the same height as the left section. Then, model selector, temperature, difficulty, on the right section.
+
+
+## 2026-11-05 17:17  (session ef407f0a)
+
+Difficulty is greyed out because generic role title is still using saved questions, right? Please get rid of that flow, and also make the generic role title call the same LLM just with the given inputs. Keep the questions though, in case the LLM is not producing any error, we should show the generic ones together with a small warning that the model failed. This gives us a backup solution for LLM issues.
+
+
+## 2026-11-05 17:21  (session 1b86dc2e)
+
+Yes please, adapt the CV input so that a pdf can also be drag-and-dropped there
+
+
+## 2026-11-05 17:23  (session ef407f0a)
+
+What would be a good example of what they ask for Mandatory task 5? Let's discuss first
+
+
+## 2026-11-05 17:27  (session 1b86dc2e)
+
+Works great! Now lets allow fitness check and cover letter for "generic roles" as well
+
