@@ -129,6 +129,14 @@ JOB_OPENING_USER_PROMPT_TEMPLATE = (
     "Question difficulty: {difficulty_instruction}"
 )
 
+# Appended to the user message (both brief paths) when the user's history holds questions
+# for a similar job (see user_store.py), so the LLM generates new ones.
+# Placeholder: {questions} (a bulleted list).
+AVOID_QUESTIONS_TEMPLATE = (
+    "\n\nThe candidate already practised these questions for a similar job. "
+    "Generate different questions; do not repeat or rephrase these:\n{questions}"
+)
+
 # Difficulty levels the user can pick for the questions. Added to the *user* message (not the
 # system prompt): it is a per-request choice, like the job description, while the system
 # prompt holds the fixed task and output format.

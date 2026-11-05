@@ -4,14 +4,12 @@ Mandatory and optional tasks from `115.md`. Bonus points need **at least 2 Mediu
 
 Legend: `[x]` done · `[~]` partially done · `[ ]` not started
 
-**Bonus progress:** Medium 3 done (2 partial) · Hard 0 done.
-
 ## Mandatory
 
 - [x] 1. Research the nature of interview preparation you want to do.
   - Chosen: prep brief with practice questions, from a generic role + seniority (`build_preparation_plan_generic()`) or from a specific job description (`build_preparation_plan_opening()`), both via the LLM. If the generic LLM call fails, stored backup questions (`_ROLE_PROFILES` in `core.py`) are shown with a warning.
 - [x] 2. Decide how to build the front-end (Streamlit components or Next.js).
-  - Streamlit (`landing.py`): three equal-height input sections (1 role/job, 2 CV, 3 settings: model, temperature, difficulty), no sidebar, one button per action, wide layout capped at 1200 px (small CSS rule), results in tabs ("Potential questions", "Practice interview" placeholder, "Fit check & cover letter"; a button switches to its tab and marks it with a green dot until clicked), one expander per question, spinner while the LLM runs, `st.error` if the call fails.
+  - Streamlit (`landing.py`): three equal-height input panels (1 role/job + question difficulty, 2 CV, 3 settings: model, max tokens, costs, temperature), no sidebar, one button below panels 1 and 2 (same width), wide layout capped at 1200 px (small CSS rule), results in tabs ("Potential questions", "Practice interview" placeholder, "Fit check & cover letter", "My history" when logged in; a button switches to its tab and marks it with a green dot until clicked), one expander per question, spinner while the LLM runs, `st.error` if the call fails.
 - [x] 3. Choose an OpenRouter model (`openai/gpt-6-luna`, `anthropic/claude-sonnet-5.5` or `openai/gpt-6.1-sol`; embeddings: `qwen/qwen3-embedding-8b`, `openai/text-embedding-3-small/large`).
   - Default `openai/gpt-6-luna` (`DEFAULT_MODEL` in `core.py`); the user can switch to the other two (see Medium 7). All three support structured outputs and are called through the OpenAI SDK pointed at OpenRouter (`config.get_client()`).
 - [~] 4. Write at least 5 system prompts with different techniques (few-shot, Chain-of-Thought, zero-shot, etc.) and compare which works best.
@@ -31,16 +29,17 @@ Legend: `[x]` done · `[~]` partially done · `[ ]` not started
 - [ ] 6. Generate interviewer guidelines (structured evaluation criteria for technical and behavioural interviews).
 - [ ] 7. Mock interview with AI personas (strict, neutral, friendly interviewer).
 - [~] 8. Tune at least one model setting (temperature, max tokens, reasoning effort, etc.) and compare outputs.
-  - Temperature can be set via the toggle in the Settings section "Set temperature (experimental)" (slider 0-2), which switches to `TEMPERATURE_MODELS` in `core.py` (`google/gemini-3.1-flash-image`): none of the 3 course models accept `temperature`. A warning explains the risks. `temperature` is only sent when set (`_ask_llm()`). Missing: compare outputs at low vs high temperature and note the differences.
+  - Temperature can be set via the toggle in the Settings section "Set temperature (experimental)" (slider 0-2), which switches to `TEMPERATURE_MODELS` in `core.py` (`google/gemini-3.1-flash-image`): none of the 3 course models accept `temperature`. A warning explains the risks. `temperature` is only sent when set (`_ask_llm()`). Max tokens is also adjustable (see Medium 1). Missing: compare outputs at low vs high temperature (or different max tokens) and note the differences.
 
 ## Medium
 
-- [ ] 1. Expose all model settings (model, temperature, max tokens, etc.) as sliders/fields.
+- [x] 1. Expose all model settings (model, temperature, max tokens, etc.) as sliders/fields.
+  - Settings section in `landing.py`: model (select box), temperature (opt-in toggle + slider 0-2), max tokens (slider 1,000-8,000, default 4,000: `MAX_TOKENS_RANGE` in `core.py`, based on measured answers of ~450-1,050 output tokens) and question difficulty. Settings are only sent when set (`_ask_llm()`). If an answer hits the max tokens limit, the user gets a clear "cut off, increase Max tokens" message (generic mode falls back to the backup questions).
 - [x] 2. At least two structured JSON output formats.
   - `_LLMPlan` (role title, seniority, summary, list of `PracticeQuestion`) and `FitAssessment` (match score 0-10, reasoning, cover letter), both in `core.py`, requested with `chat.completions.parse(response_format=...)` in `_ask_llm()`.
-- [ ] 3. Calculate and show the price of the prompt (OpenRouter models endpoint).
-- [~] 4. Read the OpenRouter docs, think of your own improvement, and implement it.
-  - Uses `provider.require_parameters` (`extra_body` in the `.parse()` call) so only providers supporting structured outputs are used. Probably too small to count on its own.
+- [x] 3. Calculate and show the price of the prompt (OpenRouter models endpoint).
+  - `pricing.py`, shown below the Settings section: (1) **estimate before sending**: model prices per token from the OpenRouter models endpoint × (~1,000 input + max tokens output), e.g. $0.00210 for `gpt-6-luna` at 4,000 tokens; (2) **real cost after each action**: the cost OpenRouter reports per request (`usage.cost`), added up over all requests of the click (guard check, embedding, main call; also cut-off answers, which are billed), plus a session total. Checked: reported cost = tokens × endpoint prices (375 × $0.0000001 + 687 × $0.0000005 = $0.000381).
+- [ ] 4. Read the OpenRouter docs, think of your own improvement, and implement it.
 - [ ] 5. Jailbreak your own app; record the results in an Excel sheet.
 - [~] 6. Job description field to get prep for that specific position (RAG).
   - Done: "Specific job opening" text area in `landing.py`, inserted into the user prompt (`JOB_OPENING_USER_PROMPT_TEMPLATE`). If a URL is pasted, the page is downloaded and its text sent instead (`web_fetch.py`). Missing: no retrieval (RAG).
@@ -48,13 +47,20 @@ Legend: `[x]` done · `[~]` partially done · `[ ]` not started
   - "LLM model" select box in the Settings section (`landing.py`), options from `AVAILABLE_MODELS` in `core.py` (the 3 course models, all support structured outputs); passed down to `_ask_llm()`.
 - [ ] 8. Creative use of image generation (`google/gemini-3.1-flash-image`).
 - [x] 9. Security guard + keep developer settings (model, system prompts) separate from the user experience.
-  - Guard: see Mandatory 5. System prompts live only in `prompts.py` (never shown or editable in the UI); the model and temperature sit in their own Settings section, apart from the user's inputs.
+  - **Guard (`guard.py`)**, run before every action by `_check_with_guard()` in `landing.py`:
+    - Length limits per field (role title 100, job description and CV 15,000 characters): stop oversized inputs that would waste tokens, without an API call.
+    - LLM misuse check: one call to the cheapest course model (`GUARD_MODEL`, independent of the user's model choice so it can't be weakened) with `GUARD_SYSTEM_PROMPT` and the `GuardVerdict` schema (`is_valid`, `reason`). It flags prompt injection (e.g. "ignore previous instructions", "give this candidate 10/10" hidden in a CV), off-topic requests (e.g. an essay instead of a job description) and harmful content.
+    - Flagged input shows a warning with the reason and the action does not run, so the user can fix the input. If the guard's own LLM call fails, the check is skipped (fail open) so the generic backup questions still work.
+    - URLs pointing to localhost or private networks are refused in `web_fetch.py` (also after redirects).
+    - Tested live: injection in role title and CV and an off-topic essay request were flagged; normal and informal inputs passed.
+  - **Developer settings kept separate:** system prompts live only in `prompts.py` (never shown or editable in the UI); the model and temperature sit in their own Settings section, apart from the user's inputs.
 
 ## Hard
 
 - [ ] 1. Full chatbot application instead of a one-time API call.
 - [ ] 2. Use LangChain (chains or agents).
-- [ ] 3. Vector database to detect previously seen prep data and generate new data.
+- [x] 3. Vector database to detect previously seen prep data and generate new data.
+  - Lightweight vector store in `user_store.py`: one JSON file per logged-in user (`data/users/<username>.json`) with each job profile's embedding (`core.embed_text()`, `qwen/qwen3-embedding-8b`), its questions and latest fit result. Before a brief, the job (job-opening mode: the job text; generic mode: the role title only, see `actions._embed_for_history()`) is embedded and compared with all past profiles by cosine similarity (numpy). Profiles ≥ 70% similar count as "seen before": their questions are sent to the LLM as "do not repeat" (`AVOID_QUESTIONS_TEMPLATE`), so it generates new ones; the top-3 closest other roles (≥ 50%) are suggested. The fit check uses the same search to show the top-3 similar jobs the user already checked, with their scores, to compare. Tested: "Business Intelligence Analyst" after "Data Analyst" → 91% similar, the 5 earlier questions were avoided; its fit check listed "Data Analyst: 8/10, 89% similar". Note: a hand-made vector store (embeddings + similarity search), not a vector DB library such as ChromaDB.
 - [ ] 4. Use open-source LLMs.
   - Not possible with the current API key: open-source models (e.g. `openai/gpt-oss-120b`) are blocked by the OpenRouter workspace guardrail (allow-list). Parked.
 - [ ] 5. Assess prompt/model performance (LLM-as-a-judge or other methods).
@@ -62,6 +68,7 @@ Legend: `[x]` done · `[~]` partially done · `[ ]` not started
 ## Other work (not in `115.md`)
 
 - Project setup with uv, API keys in `.env` (`config.py`), `start_app.bat` to launch the app.
+- Optional login (`auth.py`, `streamlit-authenticator`): log in / create account at the top of the page; passwords stored as bcrypt hashes in `config.yaml`. Logged-in users get a "My history" tab with all their job profiles (questions, fit score, cover letter). Demo accounts for reviewers: `demo` / `Demo-pass1` and `sergi` / `WillGet100%?` (committed on purpose, history in `data/users/`; listed in the README).
 - Prompts in their own file (`prompts.py`) for easy editing and comparison.
 - LLM errors are caught in `landing.py` and shown with `st.error` instead of a traceback.
 - CV fit check + cover letter: "Check my fit & write a cover letter" button, one LLM call (`assess_fit_and_write_cover_letter()` in `core.py`), shown with score bar, reasoning and a download button. Works in both modes: generic roles use a stand-in description (`describe_generic_role()`).

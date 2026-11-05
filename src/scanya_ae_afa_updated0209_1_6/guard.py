@@ -9,7 +9,7 @@ If something is flagged, the app shows the message as a warning and does not run
 feature, so the user can change the input and try again. Unsafe URLs (localhost, private
 networks) are blocked separately in web_fetch.py, where the page is downloaded.
 
-Public function: check_inputs().
+Public: check_inputs(), FAIR_REQUEST.
 """
 
 from pydantic import BaseModel
@@ -19,6 +19,9 @@ from scanya_ae_afa_updated0209_1_6.core import _ask_llm
 
 # Cheapest course model: the check is simple, and the user's model choice should not weaken it.
 GUARD_MODEL = "openai/gpt-6-luna"
+
+# What check_inputs() returns when nothing is flagged. Callers compare against this constant.
+FAIR_REQUEST = "Fair request"
 
 # Maximum characters per input field.
 MAX_LENGTHS = {
@@ -35,10 +38,10 @@ class GuardVerdict(BaseModel):
     reason: str
 
 
-def check_inputs(role_title: str = "", seniority: str = "", job_description: str = "", cv: str = "") -> str | None:
+def check_inputs(role_title: str = "", seniority: str = "", job_description: str = "", cv: str = "") -> str:
     """Check the inputs a feature is about to use. Pass only the fields that feature sends.
 
-    Returns None if everything is fine, otherwise a message to show the user.
+    Returns FAIR_REQUEST ("Fair request") if everything is fine, otherwise a message to show the user.
     If the guard's own LLM call fails (e.g. API down), the check is skipped ("fail open"),
     so the feature can still run and, in generic mode, fall back to the stored questions.
     """
@@ -59,8 +62,8 @@ def check_inputs(role_title: str = "", seniority: str = "", job_description: str
         verdict = _ask_llm(prompts.GUARD_SYSTEM_PROMPT, user_prompt, GuardVerdict, GUARD_MODEL)
     except Exception as error:
         print(f"Guard check skipped, LLM call failed: {error}")
-        return None
+        return FAIR_REQUEST
 
     if not verdict.is_valid:
         return f"Your input was flagged by the safety check: {verdict.reason} Please change it and try again."
-    return None
+    return FAIR_REQUEST

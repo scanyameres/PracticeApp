@@ -1,0 +1,22 @@
+cookie:
+  expiry_days: 30
+  key: fb400c1d1095e78cad4fe966b56c15242c6116cdf767f407b4a0f2abf967e05d
+  name: interview_practice_login
+credentials:
+  usernames:
+    demo:
+      email: demo@example.com
+      failed_login_attempts: 0
+      first_name: Demo
+      last_name: Reviewer
+      logged_in: true
+      password: $2b$12$RyQTk7EBFsxy9QCfS3mBHen9PyNxY/Gj8zwRqVKAQG19WkgO8XYyG
+      roles: null
+    sergi:
+      email: fakemail@gmail.com
+      failed_login_attempts: 0
+      first_name: Sergi
+      last_name: Canyameres
+      logged_in: true
+      password: $2b$12$lYJo6.FmIDDGcDRF4r8rauxxT00iUcsKbaPo5OltZdb5RwPZ/IN.y
+      roles: null

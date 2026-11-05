@@ -5,17 +5,21 @@ Builds a PreparationPlan with the LLM (OpenRouter, structured output; prompts in
   falls back to fixed role profiles (keyword matching, no API call) and says so.
 - build_preparation_plan_opening(): from a job description or URL.
 
+Both accept `avoid_questions` (questions already generated for similar jobs, found in the
+user's history: see actions.py and user_store.py), so the LLM generates new ones.
+
 And, separately:
 - assess_fit_and_write_cover_letter(): from the user's CV and a job opening, one LLM call
   returns a FitAssessment (match score, reasoning, cover letter).
+- embed_text(): turns a text into an embedding vector, used to compare job profiles.
 """
 
 from dataclasses import dataclass
-import re
 
+import openai
 from pydantic import BaseModel, Field
 
-from scanya_ae_afa_updated0209_1_6 import prompts, web_fetch
+from scanya_ae_afa_updated0209_1_6 import pricing, prompts, web_fetch
 from scanya_ae_afa_updated0209_1_6.config import get_client
 
 # OpenRouter models the user can choose from (all support structured outputs).
@@ -33,6 +37,15 @@ DEFAULT_MODEL = AVAILABLE_MODELS[0]
 TEMPERATURE_MODELS = (
     "google/gemini-3.1-flash-image",
 )
+
+# Embedding model (from the course list in 115.md) used to compare job profiles by meaning.
+EMBEDDING_MODEL = "qwen/qwen3-embedding-8b"
+
+# Range for the user's "max tokens" setting (maximum output tokens per answer, including the
+# model's hidden reasoning). Measured: a brief or fit check uses ~450-1,050 output tokens, so
+# much below 1,000 answers get cut off and fail.
+MAX_TOKENS_RANGE = (1_000, 8_000)
+DEFAULT_MAX_TOKENS = 4_000
 
 
 @dataclass(frozen=True)
@@ -85,21 +98,18 @@ class FitAssessment(BaseModel):
 class _RoleProfile:
     """Internal template for one role family; chosen when any match_terms appear in the input."""
 
-    key: str
     match_terms: tuple[str, ...]
     summary: str
-    focus_areas: tuple[str, ...]
     questions: tuple[PracticeQuestion, ...]
 
 
-# Fixed role templates, used only as a backup when the LLM call fails. Order matters: the first profile whose match_terms appear wins,
-# and the last one ("General") is the fallback.
+# Fixed role templates, used only as a backup when the LLM call fails (see _fallback_plan).
+# Order matters: the first profile whose match_terms appear in the role title wins, and the
+# last one (general questions, no match_terms) is used when nothing matches.
 _ROLE_PROFILES = (
     _RoleProfile(
-        key="Software engineering",
         match_terms=("software", "engineer", "developer", "backend", "front end", "frontend"),
         summary="Explore how you design, build, and improve reliable software with a team.",
-        focus_areas=("Technical problem-solving", "System design", "Code quality", "Collaboration"),
         questions=(
             PracticeQuestion(
                 "Technical", "How do you break an ambiguous engineering problem into a practical plan?",
@@ -120,10 +130,8 @@ _ROLE_PROFILES = (
         ),
     ),
     _RoleProfile(
-        key="Product management",
         match_terms=("product manager", "product management", "product lead"),
         summary="Prepare to connect customer needs, product strategy, and measurable outcomes.",
-        focus_areas=("Product strategy", "Prioritization", "Customer insight", "Stakeholder alignment"),
         questions=(
             PracticeQuestion(
                 "Product sense", "How would you decide which customer problem to solve next?",
@@ -144,10 +152,8 @@ _ROLE_PROFILES = (
         ),
     ),
     _RoleProfile(
-        key="Data analysis",
         match_terms=("data analyst", "data analytics", "business intelligence", "analytics"),
         summary="Focus on turning trustworthy analysis into clear, useful decisions.",
-        focus_areas=("Analytical thinking", "Data quality", "Communication", "Business impact"),
         questions=(
             PracticeQuestion(
                 "Analysis", "Walk me through how you would investigate an unexpected change in a key metric.",
@@ -168,10 +174,8 @@ _ROLE_PROFILES = (
         ),
     ),
     _RoleProfile(
-        key="Marketing",
         match_terms=("marketing", "growth", "brand", "communications"),
         summary="Prepare to discuss audience insight, campaign choices, and measurable growth.",
-        focus_areas=("Audience insight", "Campaign strategy", "Experimentation", "Measurement"),
         questions=(
             PracticeQuestion(
                 "Strategy", "How would you build a marketing plan for a new audience?",
@@ -192,10 +196,8 @@ _ROLE_PROFILES = (
         ),
     ),
     _RoleProfile(
-        key="Customer success",
         match_terms=("customer success", "account manager", "customer experience"),
         summary="Explore how you build customer trust, solve problems, and support lasting value.",
-        focus_areas=("Customer relationships", "Problem-solving", "Retention", "Communication"),
         questions=(
             PracticeQuestion(
                 "Customer focus", "Tell me about a time you turned around a difficult customer relationship.",
@@ -216,10 +218,8 @@ _ROLE_PROFILES = (
         ),
     ),
     _RoleProfile(
-        key="General",
         match_terms=(),
         summary="Build clear examples around role expertise, problem-solving, and collaboration.",
-        focus_areas=("Role expertise", "Problem-solving", "Communication", "Collaboration"),
         questions=(
             PracticeQuestion(
                 "Problem-solving", "Tell me about a challenging problem you solved at work.",
@@ -257,6 +257,8 @@ def build_preparation_plan_generic(
     difficulty: str = "Medium",
     model: str = DEFAULT_MODEL,
     temperature: float | None = None,
+    avoid_questions: list[str] | None = None,
+    max_tokens: int | None = None,
 ) -> PreparationPlan:
     """Build a prep plan from a role title and experience level using the LLM.
 
@@ -269,9 +271,9 @@ def build_preparation_plan_generic(
         role_title=role_title.strip(),
         seniority=seniority,
         difficulty_instruction=prompts.DIFFICULTY_INSTRUCTIONS[difficulty],
-    )
+    ) + _avoid_instruction(avoid_questions)
     try:
-        llm_plan = _ask_llm(prompts.GENERIC_ROLE_SYSTEM_PROMPT, user_prompt, _LLMPlan, model, temperature)
+        llm_plan = _ask_llm(prompts.GENERIC_ROLE_SYSTEM_PROMPT, user_prompt, _LLMPlan, model, temperature, max_tokens)
     except Exception as error:  # Any LLM problem: use the backup questions instead.
         return _fallback_plan(role_title, seniority, fallback_reason=str(error))
 
@@ -319,6 +321,8 @@ def build_preparation_plan_opening(
     difficulty: str = "Medium",
     model: str = DEFAULT_MODEL,
     temperature: float | None = None,
+    avoid_questions: list[str] | None = None,
+    max_tokens: int | None = None,
 ) -> PreparationPlan:
     """Build a personalized prep plan from a job description or URL using the LLM.
 
@@ -336,10 +340,10 @@ def build_preparation_plan_opening(
     """
 
     user_prompt = prompts.JOB_OPENING_USER_PROMPT_TEMPLATE.format(
-        job_description=_job_text(job_description),
+        job_description=resolve_job_text(job_description),
         difficulty_instruction=prompts.DIFFICULTY_INSTRUCTIONS[difficulty],
-    )
-    llm_plan = _ask_llm(prompts.JOB_OPENING_SYSTEM_PROMPT, user_prompt, _LLMPlan, model, temperature)
+    ) + _avoid_instruction(avoid_questions)
+    llm_plan = _ask_llm(prompts.JOB_OPENING_SYSTEM_PROMPT, user_prompt, _LLMPlan, model, temperature, max_tokens)
 
     return PreparationPlan(
         role_title=llm_plan.role_title,
@@ -354,6 +358,7 @@ def assess_fit_and_write_cover_letter(
     job_description: str,
     model: str = DEFAULT_MODEL,
     temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> FitAssessment:
     """Compare the user's CV with a job opening and write a cover letter, in one LLM call.
 
@@ -365,29 +370,53 @@ def assess_fit_and_write_cover_letter(
         openai.OpenAIError: on API problems (network, invalid key, no provider, ...).
     """
     user_prompt = prompts.FIT_USER_PROMPT_TEMPLATE.format(
-        cv=cv, job_description=_job_text(job_description)
+        cv=cv, job_description=resolve_job_text(job_description)
     )
-    return _ask_llm(prompts.FIT_SYSTEM_PROMPT, user_prompt, FitAssessment, model, temperature)
+    return _ask_llm(prompts.FIT_SYSTEM_PROMPT, user_prompt, FitAssessment, model, temperature, max_tokens)
 
 
 def describe_generic_role(role_title: str, seniority: str) -> str:
-    """Build a stand-in job description for a generic role, so the fit check works without a posting.
+    """Build a stand-in job description for a generic role (no posting available).
 
-    Pass the result to assess_fit_and_write_cover_letter() as `job_description`.
+    Used in generic mode as the `job_description` for assess_fit_and_write_cover_letter().
+    (Not used for the history embedding: see actions._embed_for_history.)
     """
     return prompts.GENERIC_ROLE_JOB_TEMPLATE.format(
         seniority=seniority, role_title=role_title.strip()
     )
 
 
-def _job_text(job_input: str) -> str:
+def resolve_job_text(job_input: str) -> str:
     """Return the job description text; if the input is a URL, download the page first.
 
     The LLM cannot open links, so the app fetches the page itself (see web_fetch.py).
+    Called by the functions above; actions.py also calls it once up front, so the same page
+    text is used for the embedding and the LLM call (and the page is downloaded only once:
+    the returned text is no longer a URL).
     """
     if web_fetch.is_url(job_input):
         return web_fetch.fetch_job_description(job_input)
     return job_input
+
+
+def embed_text(text: str) -> list[float]:
+    """Return the embedding (a list of numbers capturing the meaning) of `text`.
+
+    Similar texts get similar vectors; user_store.py compares them with cosine similarity
+    to find job profiles the user prepared for before.
+    """
+    client = get_client("OpenRouter")
+    response = client.embeddings.create(model=EMBEDDING_MODEL, input=text)
+    pricing.record_cost(response.usage)
+    return response.data[0].embedding
+
+
+def _avoid_instruction(avoid_questions: list[str] | None) -> str:
+    """Extra user-message text listing questions the LLM must not repeat ("" if none)."""
+    if not avoid_questions:
+        return ""
+    question_list = "\n".join(f"- {question}" for question in avoid_questions)
+    return prompts.AVOID_QUESTIONS_TEMPLATE.format(questions=question_list)
 
 
 def _ask_llm[T: BaseModel](
@@ -396,50 +425,50 @@ def _ask_llm[T: BaseModel](
     schema: type[T],
     model: str = DEFAULT_MODEL,
     temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> T:
     """Send one system + user message to `model` and return the answer parsed into `schema`.
 
     Shared by all LLM features. Uses structured output: .parse() sends `schema` as a JSON
     schema and returns the validated object in .parsed (instead of free text in .content).
 
-    `temperature` is only sent when given: models that do not support it (AVAILABLE_MODELS)
-    would otherwise fail, because require_parameters only accepts providers supporting it.
+    `temperature` and `max_tokens` are only sent when given: models that do not support
+    temperature (AVAILABLE_MODELS) would otherwise fail, because require_parameters only
+    accepts providers supporting every parameter sent. If the answer needs more than
+    `max_tokens`, it is cut off: raises ValueError with a message for the user.
+    The request's cost is recorded in pricing.py (also for cut-off answers, which are billed).
     """
     # Optional settings: only include the ones the user actually set.
-    settings = {} if temperature is None else {"temperature": temperature}
+    settings = {}
+    if temperature is not None:
+        settings["temperature"] = temperature
+    if max_tokens is not None:
+        settings["max_tokens"] = max_tokens
 
     client = get_client("OpenRouter")
-    response = client.chat.completions.parse(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        response_format=schema,
-        **settings,
-        # OpenRouter-specific: only route to providers that support every parameter we
-        # send (structured outputs, temperature), instead of silently ignoring them.
-        extra_body={"provider": {"require_parameters": True}},
-    )
+    try:
+        response = client.chat.completions.parse(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format=schema,
+            **settings,
+            # OpenRouter-specific: only route to providers that support every parameter we
+            # send (structured outputs, temperature, max_tokens), instead of silently ignoring them.
+            extra_body={"provider": {"require_parameters": True}},
+        )
+    except openai.LengthFinishReasonError as error:
+        # The answer hit max_tokens and was cut off (unparseable JSON). It is still billed, so
+        # record its cost, and replace the SDK's technical message with one for the user.
+        pricing.record_cost(error.completion.usage)
+        raise ValueError(
+            f"The answer was cut off at the max tokens limit ({max_tokens:,}). "
+            "Increase 'Max tokens' in Settings and try again."
+        ) from error
+    pricing.record_cost(response.usage)
     parsed = response.choices[0].message.parsed
     if parsed is None:  # The model refused or returned nothing usable.
         raise ValueError(f"LLM did not return a usable answer: {response.choices[0].message.refusal}")
     return parsed
-    # questions.extend(
-    #     (
-    #         PracticeQuestion(
-    #             "Behavioral", "Tell me about a time you received feedback and what you did with it.",
-    #             "Shows self-awareness and how you turn feedback into action.",
-    #         ),
-    #         PracticeQuestion(
-    #             "Motivation", f"Why does this {seniority.lower()} {title} role interest you?",
-    #             "Connects your experience and interests to the opportunity.",
-    #         ),
-    #     )
-    # )
-    # return PreparationPlan(
-    #     role_title=title,
-    #     seniority=seniority,
-    #     role_summary=profile.summary,
-    #     questions=tuple(questions[:7]),
-    # )

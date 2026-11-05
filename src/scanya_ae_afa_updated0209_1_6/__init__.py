@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from scanya-ae-afa-updated0209-1-6!")
+"""Interview Practice app package. Start the app with start_app.bat (UI: landing.py)."""

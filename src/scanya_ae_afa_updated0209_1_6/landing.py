@@ -1,21 +1,18 @@
-"""Streamlit UI: three input sections (role/job, CV, settings), action buttons, results in tabs.
+"""Streamlit UI (the page itself): login, three input panels with their buttons, results in tabs.
 
 Run with start_app.bat (or `uv run streamlit run src/scanya_ae_afa_updated0209_1_6/landing.py`).
-All logic lives in core.py; this file only collects inputs, calls core and shows results.
+This file only draws the page, validates inputs, and shows results; the work is done by:
+actions.py (logic behind the buttons), guard.py (input checks), auth.py (login box),
+cv_reader.py (CV PDFs), pricing.py (request costs), user_store.py (history tab).
+
+Page order (Streamlit reruns this script top to bottom on every click):
+header + login -> input panels + buttons -> button actions -> costs -> result tabs.
 """
 
-from pathlib import Path
 import streamlit as st
 
-#import streamlit_authenticator as stauth
-#from streamlit_authenticator.utilities import LoginError
-
 import scanya_ae_afa_updated0209_1_6.core as appcore
-from scanya_ae_afa_updated0209_1_6 import guard
-from scanya_ae_afa_updated0209_1_6 import cv_reader
-
-# Auth settings and users (gitignored, contains secrets). Template: config.example.yaml.
-# AUTH_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+from scanya_ae_afa_updated0209_1_6 import actions, auth, cv_reader, guard, pricing, user_store
 
 GENERIC_MODE = "Generic role title and experience"
 OPENING_MODE = "Specific job opening"
@@ -34,9 +31,13 @@ st.title("✳️ Application Assistant and Interview Practice")
 st.caption("By Sergi Canyameres")
 st.write("Prepare for a role, explore likely interview questions, check how well you fit an opening, and get a cover letter.")
 
-# --- Inputs: three equal-height sections side by side ---
+
+# --- Optional login (auth.py): logged-in users get their job profiles saved (user_store.py) ---
+username = auth.login_area()
+
+# --- Inputs: three equal-height panels side by side (buttons are added below panels 1 and 2) ---
 # Fixed-height bordered containers keep the three boxes aligned; content scrolls if it overflows.
-SECTION_HEIGHT = 360
+SECTION_HEIGHT = 400
 role_section, cv_section, settings_section = st.columns(3)
 
 # Left: what the user is preparing for, and the matching inputs.
@@ -55,8 +56,13 @@ with role_section.container(border=True, height=SECTION_HEIGHT):
         job_description = st.text_area(
             "Job opening URL or description",
             placeholder="Paste the job posting URL or role description...",
-            height=170,
+            height=100,
         )
+    difficulty = st.select_slider(
+        "Question difficulty",
+        ("Easy", "Medium", "Hard"),
+        value="Medium",
+    )
 
 # Middle: the user's CV, as a PDF (drag and drop) or pasted text. An uploaded PDF wins.
 with cv_section.container(border=True, height=SECTION_HEIGHT):
@@ -77,7 +83,7 @@ with cv_section.container(border=True, height=SECTION_HEIGHT):
             user_cv = ""
             st.error(str(error))
 
-# Right: model and generation settings.
+# Right: model and generation settings, plus the request costs.
 with settings_section.container(border=True, height=SECTION_HEIGHT):
     st.markdown("**3 · Settings**")
     # The temperature toggle is drawn below the model list but decides its options, so read its
@@ -88,7 +94,22 @@ with settings_section.container(border=True, height=SECTION_HEIGHT):
         "LLM model",
         appcore.TEMPERATURE_MODELS if use_temperature else appcore.AVAILABLE_MODELS,
         help="OpenRouter model used for all AI features.",
+    )       
+    max_tokens = st.slider(
+        "Max tokens (answer length limit)",
+        *appcore.MAX_TOKENS_RANGE,
+        appcore.DEFAULT_MAX_TOKENS,
+        step=500,
+        help="Upper limit for each AI answer (including the model's hidden reasoning). A typical "
+        "answer needs ~500-1,000 tokens; if the limit is reached, the answer is cut off and fails. "
+        "A higher limit also raises the maximum possible cost.",
     )
+
+    # Request costs, shown here in the Settings panel. Reserved now, filled at the end of
+    # the actions below (costs are only known after the buttons have run). st.empty() (not
+    # settings_section.empty()) so the placeholder goes inside this bordered container.
+    cost_area = st.empty()
+
     st.toggle(
         "Set temperature (experimental)",
         key="use_temperature",
@@ -100,12 +121,6 @@ with settings_section.container(border=True, height=SECTION_HEIGHT):
             "Temperature", 0.0, 2.0, 0.7, 0.1,
             help="Low = focused and repeatable answers. High = more varied and creative, but less reliable.",
         )
-    difficulty = st.select_slider(
-        "Question difficulty",
-        ("Easy", "Medium", "Hard"),
-        value="Medium",
-    )
-    if use_temperature:
         st.warning(
             "**Experimental:** a different model may give lower-quality results, fail to return "
             "the expected format, or invent details (especially above 1.0). Review results carefully."
@@ -118,6 +133,7 @@ RESULT_TABS = {
     "questions": "Potential questions",
     "practice": "Practice interview",
     "fit": "Fit check & cover letter",
+    "history": "My history",
 }
 NEW_RESULT_DOT = " :green[●]"  # Markdown colour directive, supported in tab labels
 st.session_state.setdefault("new_results", set())
@@ -144,8 +160,10 @@ def _on_tab_click() -> None:
     st.session_state["new_results"].discard(tab_id)
 
 
-def _check_with_guard(role_title: str, seniority: str, job_description: str, cv: str = "") -> str | None:
-    """Run the security guard on the inputs an action uses. Returns a warning message or None.
+def _check_with_guard(role_title: str, seniority: str, job_description: str, cv: str = "") -> str:
+    """Run the security guard on the inputs an action uses.
+
+    Returns guard.FAIR_REQUEST if the inputs are fine, otherwise a warning message.
 
     If something is flagged, the caller shows the warning and skips the action, so the user
     can change the input and click again.
@@ -155,61 +173,72 @@ def _check_with_guard(role_title: str, seniority: str, job_description: str, cv:
 
 
 # --- Actions: each button runs one feature and stores its result in session state ---
-brief_column, fit_column = st.columns(2)
-build_brief = brief_column.button("Build my prep brief", type="primary", width="stretch")
-check_fit = fit_column.button(
-    "Check my fit & write a cover letter",
-    width="stretch",
-    help="Needs your CV and a role title or job opening.",
-)
+# Each button goes in the column of the panel it uses, so it appears right below that panel
+# at the same width: questions under 1 (role/job), fit check under 2 (CV).
+build_brief = role_section.button("Suggest interview questions", type="primary", width="stretch")
+check_fit = cv_section.button("Check my fit & write a cover letter", type="primary", width="stretch", help="Needs your CV and a role title or job opening.")
 
 if build_brief:
+    pricing.start_tracking()  # add up the cost of every request this click makes
     if input_mode == GENERIC_MODE and not role_title.strip():
         st.error("Add a role title to continue.")
     elif input_mode == OPENING_MODE and not job_description.strip():
         st.error("Paste a job opening URL or description, or switch to a generic role title.")
-    elif guard_message := _check_with_guard(role_title, seniority, job_description):
+    elif (guard_message := _check_with_guard(role_title, seniority, job_description)) != guard.FAIR_REQUEST:
         st.warning(guard_message)
     else:
-        # Both modes call the LLM. The generic one falls back to stored questions by itself
-        # (see plan.fallback_reason); other errors are shown as a message instead of a traceback.
+        # The logic (LLM call, history) is in actions.py. Generic mode falls back to stored
+        # questions by itself (result.plan.fallback_reason); other errors are shown as a message.
         try:
-            with st.spinner("Generating your prep brief..."):
-                if input_mode == GENERIC_MODE:
-                    st.session_state["preparation_plan"] = appcore.build_preparation_plan_generic(
-                        role_title, seniority, difficulty, model, temperature
-                    )
-                else:
-                    st.session_state["preparation_plan"] = appcore.build_preparation_plan_opening(
-                        job_description, difficulty, model, temperature
-                    )
+            with st.spinner("Generating interview questions..."):
+                st.session_state["questions_result"] = actions.suggest_questions(
+                    username, role_title, seniority, job_description, difficulty, model,
+                    temperature, max_tokens,
+                )
             _show_new_result("questions")
         except Exception as error:
             st.error(f"Could not generate the brief: {error}")
 
 if check_fit:
+    pricing.start_tracking()  # add up the cost of every request this click makes
     if not user_cv.strip():
-        st.error("Paste your CV to check your fit and get a cover letter.")
+        st.error("Add your CV (PDF or pasted text) to check your fit and get a cover letter.")
     elif input_mode == GENERIC_MODE and not role_title.strip():
         st.error("Add a role title to compare your CV with.")
     elif input_mode == OPENING_MODE and not job_description.strip():
         st.error("Paste a job opening URL or description to compare your CV with.")
-    elif guard_message := _check_with_guard(role_title, seniority, job_description, user_cv):
+    elif (guard_message := _check_with_guard(role_title, seniority, job_description, user_cv)) != guard.FAIR_REQUEST:
         st.warning(guard_message)
     else:
-        # Generic mode has no posting, so a short description of the role stands in for it.
-        if input_mode == GENERIC_MODE:
-            job_for_fit = appcore.describe_generic_role(role_title, seniority)
-        else:
-            job_for_fit = job_description
         try:
             with st.spinner("Comparing your CV with the job and writing a cover letter..."):
-                st.session_state["fit_assessment"] = appcore.assess_fit_and_write_cover_letter(
-                    user_cv, job_for_fit, model, temperature
+                st.session_state["fit_result"] = actions.check_fit(
+                    username, user_cv, role_title, seniority, job_description, model,
+                    temperature, max_tokens,
                 )
             _show_new_result("fit")
         except Exception as error:
             st.error(f"Could not check your fit: {error}")
+
+
+# --- Request costs (Medium task 3), drawn into cost_area in the Settings panel ---
+# Add this click's requests (guard check, embedding, main LLM call: whatever ran) to the totals.
+st.session_state.setdefault("session_cost", 0.0)
+if build_brief or check_fit:
+    action_cost, action_requests = pricing.tracked_cost()
+    if action_requests:
+        st.session_state["last_cost"] = (action_cost, action_requests)
+        st.session_state["session_cost"] += action_cost
+
+with cost_area.container():
+    estimate = pricing.estimate_max_cost(model, max_tokens)
+    lines = []
+    if estimate is not None:
+        lines.append(f"Estimated max cost: **{pricing.format_usd(estimate)}**")
+    if last := st.session_state.get("last_cost"):
+        lines.append(f"Last action: **{pricing.format_usd(last[0])}** ({last[1]} requests)")
+        lines.append(f"Session total: **{pricing.format_usd(st.session_state['session_cost'])}**")
+    st.caption("  \n".join(lines))
 
 st.divider()
 
@@ -217,17 +246,18 @@ st.divider()
 # Labels can change (green dot on/off), so the selected tab is set through its key before
 # drawing: Streamlit then opens that tab, e.g. the one a button just filled.
 st.session_state["results_tabs"] = _tab_label(st.session_state["active_tab"])
-brief_tab, practice_tab, fit_tab = st.tabs(
+brief_tab, practice_tab, fit_tab, history_tab = st.tabs(
     [_tab_label(tab_id) for tab_id in RESULT_TABS],
     key="results_tabs",
     on_change=_on_tab_click,
 )
 
 with brief_tab:
-    plan = st.session_state.get("preparation_plan")
-    if not isinstance(plan, appcore.PreparationPlan):
-        st.info("Click **Build my prep brief** to get likely interview questions for the role.")
+    questions_result = st.session_state.get("questions_result")
+    if not isinstance(questions_result, actions.QuestionsResult):
+        st.info("Click **Suggest interview questions** to get likely interview questions for the role.")
     else:
+        plan = questions_result.plan
         if plan.fallback_reason:
             st.warning(
                 "The AI model could not generate questions, so these are standard backup questions "
@@ -236,25 +266,65 @@ with brief_tab:
         st.subheader(f"{plan.role_title} · {plan.seniority}")
         st.write(plan.role_summary)
         st.markdown(f"**Questions to explore ({len(plan.questions)})**")
+        if questions_result.avoided_questions:
+            st.info(
+                "You prepared for a similar job before, so these questions avoid the "
+                f"{questions_result.avoided_questions} you already got."
+            )
         # Both input modes produce PracticeQuestion objects, so they render the same way.
         for index, question in enumerate(plan.questions, start=1):
             with st.expander(f"{index}. {question.prompt}"):
                 st.markdown(f"**{question.category}**")
                 st.write(question.why_it_matters)
 
+        # Up to 3 most similar past job profiles (logged-in users only).
+        if questions_result.closest_roles:
+            st.markdown("**Similar roles you prepared for before**")
+            for profile, score in questions_result.closest_roles:
+                st.markdown(f"- {profile['label']} · {score:.0%} similar · see *My history*")
+
 with fit_tab:
-    fit = st.session_state.get("fit_assessment")
-    if not isinstance(fit, appcore.FitAssessment):
+    fit_result = st.session_state.get("fit_result")
+    if not isinstance(fit_result, actions.FitResult):
         st.info("Add your CV and a role title or job opening, then click **Check my fit & write a cover letter**.")
     else:
+        fit = fit_result.fit
         st.metric("Match score", f"{fit.match_score} / 10")
         st.progress(fit.match_score / 10)
         st.write(fit.reasoning)
+
+        # Up to 3 similar jobs the user checked before, to compare scores (logged-in users only).
+        if fit_result.similar_fits:
+            st.markdown("**Similar jobs you checked before**")
+            for profile, score in fit_result.similar_fits:
+                st.markdown(
+                    f"- {profile['label']}: **{profile['fit']['match_score']} / 10** "
+                    f"· {score:.0%} similar · see *My history*"
+                )
 
         st.subheader("Cover letter")
         with st.container(border=True):
             st.write(fit.cover_letter)
         st.download_button("Download cover letter (.txt)", fit.cover_letter, file_name="cover_letter.txt")
+
+with history_tab:
+    if not username:
+        st.info("Log in (top of the page) to save every job profile you prepare for and see it here.")
+    elif not (profiles := user_store.load_profiles(username)):
+        st.info("No saved job profiles yet. Get interview questions or check your fit to start your history.")
+    else:
+        st.caption(f"{len(profiles)} job profiles, most recent first.")
+        for profile in profiles:
+            with st.expander(f"{profile['label']} · {profile['updated'][:10]}"):
+                st.caption(f"Input: {profile['job_input'][:200]}")
+                if profile["questions"]:
+                    st.markdown(f"**Questions ({len(profile['questions'])})**")
+                    for question in profile["questions"]:
+                        st.markdown(f"- *{question['category']}:* {question['prompt']}")
+                if profile["fit"]:
+                    st.markdown(f"**Fit: {profile['fit']['match_score']} / 10**")
+                    st.write(profile["fit"]["reasoning"])
+                    st.text_area("Cover letter", profile["fit"]["cover_letter"], height=150, key=f"letter_{profile['key']}")
 
 with practice_tab:
     st.info("Coming soon: practice an interview with your potential questions.")
@@ -301,33 +371,3 @@ with practice_tab:
 
 st.divider()
 st.caption("Early prototype · Prep suggestions are illustrative, not an assessment.")
-
-
-# --- Not active yet: kept for later features ---
-
-# Optional login (streamlit-authenticator, see docs/streamlit-auth.md).
-# with st.sidebar:
-#     # The app works fully without it; logged-in users will later get saved history.
-#     st.divider()
-#     if not AUTH_CONFIG_PATH.exists():
-#         st.caption("Login unavailable: copy `config.example.yaml` to `config.yaml` to enable it.")
-#     else:
-#         # login_sleep_time=0: skip the library's default 0.7 s pause on every rerun while logged out.
-#         authenticator = stauth.Authenticate(str(AUTH_CONFIG_PATH), login_sleep_time=0)
-#         auth_status = st.session_state.get("authentication_status")
-#         if auth_status:
-#             st.write(f"Signed in as **{st.session_state.get('name')}**")
-#             authenticator.logout(location="main", key="Logout")
-#             if not st.session_state.get("authentication_status"):
-#                 st.rerun()  # redraw the sidebar as logged out right away
-#         else:
-#             with st.expander("Log in to save your work", expanded=auth_status is False):
-#                 try:
-#                     authenticator.login(location="main")
-#                 except LoginError as e:
-#                     st.error(e)
-#                 new_status = st.session_state.get("authentication_status")
-#                 if new_status:
-#                     st.rerun()  # redraw the sidebar as signed in right away
-#                 elif new_status is False:
-#                     st.error("Username/password is incorrect")
