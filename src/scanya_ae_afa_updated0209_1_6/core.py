@@ -344,6 +344,11 @@ def build_preparation_plan_opening(
         difficulty_instruction=prompts.DIFFICULTY_INSTRUCTIONS[difficulty],
     ) + _avoid_instruction(avoid_questions)
     llm_plan = _ask_llm(prompts.JOB_OPENING_SYSTEM_PROMPT, user_prompt, _LLMPlan, model, temperature, max_tokens)
+    # llm_plan = _ask_llm(prompts.JOB_OPENING_SYSTEM_PROMPT_FEW_SHOT, user_prompt, _LLMPlan, model, temperature, max_tokens)
+    # llm_plan = _ask_llm(prompts.JOB_OPENING_SYSTEM_PROMPT_CHAIN_OF_THOUGHT, user_prompt, _LLMPlan, model, temperature, max_tokens)
+    # llm_plan = _ask_llm(prompts.JOB_OPENING_SYSTEM_PROMPT_ROLE, user_prompt, _LLMPlan, model, temperature, max_tokens)
+    # llm_plan = _ask_llm(prompts.JOB_OPENING_SYSTEM_PROMPT_CONSTRAINED, user_prompt, _LLMPlan, model, temperature, max_tokens)
+    
 
     return PreparationPlan(
         role_title=llm_plan.role_title,

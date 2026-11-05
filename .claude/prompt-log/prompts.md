@@ -455,3 +455,63 @@ The architecture file render the diagram before, but not any more. Why? Can you 
 
 git status
 
+
+## 2026-11-05 21:17  (session 1b86dc2e)
+
+<ide_selection>The user selected the lines 34 to 34 from c:\Users\Sergi\Documents\AI_Engineering\Part1\scanya-AE.AFA.updated0209.1.6\src\scanya_ae_afa_updated0209_1_6\prompts.py:
+JOB_OPENING_SYSTEM_PROMPT
+
+This may or may not be related to the current task.</ide_selection>
+Would you use "admin prompts" for this project? In which context? What currently used prompt could be a good admin prompt?
+
+
+## 2026-11-05 21:20  (session 1b86dc2e)
+
+<ide_selection>The user selected the lines 62 to 62 from c:\Users\Sergi\Documents\AI_Engineering\Part1\scanya-AE.AFA.updated0209.1.6\src\scanya_ae_afa_updated0209_1_6\guard.py:
+GUARD_SYS
+
+This may or may not be related to the current task.</ide_selection>
+What would be the difference between such admin prompt and the already existing ask_llm with guard system prompt?
+
+
+## 2026-11-05 21:23  (session ef407f0a)
+
+Currently the guard system prompt is like a few-shot prompt, with examples of what should detect. Update tasks.md (mandatory atask 4) to include such  annex to say that few-show is indeed present as guard
+
+
+## 2026-11-05 21:30  (session 1b86dc2e)
+
+Create another md file for the table with the different prompt & settings experiments.
+Role: Computer Vision Researcher
+Temp: at 0, at 1 and at 2
+Outcome: blank blocks for me to copypaste the results
+
+
+## 2026-11-05 21:44  (session 1b86dc2e)
+
+<ide_opened_file>The user opened the file c:\Users\Sergi\Documents\AI_Engineering\Part1\scanya-AE.AFA.updated0209.1.6\PROMPT_EXPERIMENTS.md in the IDE. This may or may not be related to the current task.</ide_opened_file>
+if I repeat the same "check fit and write cover letter" several times for the same role and with the same CV, but changing only temperatuer, is the history and vectors of past applications affecting the outcome? Or a purely new process is done every time?
+
+
+## 2026-11-05 21:46  (session 1b86dc2e)
+
+At which temperature value the outcome is way too unpredictable? I feel between 0 and 1.7 there is almost no change, but then at 2 it goes quite nuts. Is it exponentially risky?
+
+
+## 2026-11-05 21:59  (session 1b86dc2e)
+
+<ide_selection>The user selected the lines 67 to 67 from c:\Users\Sergi\Documents\AI_Engineering\Part1\scanya-AE.AFA.updated0209.1.6\src\scanya_ae_afa_updated0209_1_6\prompts.py:
+Few
+
+This may or may not be related to the current task.</ide_selection>
+In the prompt experiments md, how do you expect every prompt type to perform for this given project? What typical behaviours we see in each prompt technique, and how do they apply with the nature of preparing questions for an interview?
+
+
+## 2026-11-05 22:12  (session 1b86dc2e)
+
+<ide_selection>The user selected the lines 350 to 350 from c:\Users\Sergi\Documents\AI_Engineering\Part1\scanya-AE.AFA.updated0209.1.6\src\scanya_ae_afa_updated0209_1_6\core.py:
+llm_plan
+
+This may or may not be related to the current task.</ide_selection>
+Can you remind me why did we keep two similar functions for preparing plan generic vs job opening? What are the differences?
+
