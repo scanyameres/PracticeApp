@@ -1,0 +1,6 @@
+# Streamlit settings for this project (read when the app is started from the project root,
+# as start_app.bat does).
+
+[theme]
+# Less empty space above the title (Streamlit's default is much larger).
+paddingTop = "2rem"

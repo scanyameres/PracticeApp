@@ -6,6 +6,9 @@ description, the app fetches the page here and sends the page text to the model.
 Public functions: is_url(), fetch_job_description().
 """
 
+import ipaddress
+import socket
+
 import httpx
 from bs4 import BeautifulSoup
 
@@ -25,14 +28,33 @@ def is_url(text: str) -> bool:
     return text.startswith(("http://", "https://")) and " " not in text and "\n" not in text
 
 
+def _block_private_hosts(request: httpx.Request) -> None:
+    """Security guard: refuse URLs that point to this machine or a private network.
+
+    Otherwise a user could make the app open internal pages (e.g. http://localhost:8080/admin
+    or a router at http://192.168.1.1), which only the app's own machine can reach.
+    Runs as an httpx hook before every request, so redirects to such hosts are blocked too.
+    """
+    host = request.url.host
+    try:
+        addresses = {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except socket.gaierror:
+        return  # Unknown host: let httpx fail with its normal "could not connect" error.
+    for address in addresses:
+        if not ipaddress.ip_address(address).is_global:
+            raise ValueError(f"URLs pointing to local or private networks are not allowed ({host}).")
+
+
 def fetch_job_description(url: str) -> str:
     """Download the page at `url` and return its readable text (at most MAX_CHARS).
 
     Raises:
-        ValueError: if the page cannot be downloaded or contains too little text.
+        ValueError: if the URL points to a local/private network, the page cannot be
+            downloaded, or it contains too little text.
     """
     try:
-        response = httpx.get(url.strip(), headers=_HEADERS, timeout=15, follow_redirects=True)
+        with httpx.Client(event_hooks={"request": [_block_private_hosts]}) as client:
+            response = client.get(url.strip(), headers=_HEADERS, timeout=15, follow_redirects=True)
         response.raise_for_status()
     except httpx.HTTPError as error:
         raise ValueError(f"Could not open the URL ({error}). Please paste the job description instead.") from error

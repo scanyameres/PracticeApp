@@ -41,3 +41,12 @@ Why are  URLs are accepted by the field but not fetched, so the LLM only sees th
 
 Yes please, go with option A so that we try to read the actual content
 
+
+## 2026-11-05 17:50  (session 1b86dc2e)
+
+<ide_selection>The user selected the lines 11 to 11 from c:\Users\Sergi\Documents\AI_Engineering\Part1\scanya-AE.AFA.updated0209.1.6\src\scanya_ae_afa_updated0209_1_6\prompts.py:
+JOB_OPENING_SYSTEM_PROMPT
+
+This may or may not be related to the current task.</ide_selection>
+I tried to crash it, but I dont know if I succeeded. It just does not give any "Check fit and write cover letter" any more. Did I succeed or did it crash for another reason?
+

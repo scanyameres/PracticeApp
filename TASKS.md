@@ -4,26 +4,27 @@ Mandatory and optional tasks from `115.md`. Bonus points need **at least 2 Mediu
 
 Legend: `[x]` done · `[~]` partially done · `[ ]` not started
 
-**Bonus progress:** Medium 2 done (2 partial) · Hard 0 done.
+**Bonus progress:** Medium 3 done (2 partial) · Hard 0 done.
 
 ## Mandatory
 
 - [x] 1. Research the nature of interview preparation you want to do.
   - Chosen: prep brief with practice questions, from a generic role + seniority (`build_preparation_plan_generic()`) or from a specific job description (`build_preparation_plan_opening()`), both via the LLM. If the generic LLM call fails, stored backup questions (`_ROLE_PROFILES` in `core.py`) are shown with a warning.
 - [x] 2. Decide how to build the front-end (Streamlit components or Next.js).
-  - Streamlit (`landing.py`): three equal-height input sections (1 role/job, 2 CV, 3 settings: model, temperature, difficulty), no sidebar, one button per action, results in tabs (incl. a "Practice an answer" placeholder), one expander per question, spinner while the LLM runs, `st.error` if the call fails.
+  - Streamlit (`landing.py`): three equal-height input sections (1 role/job, 2 CV, 3 settings: model, temperature, difficulty), no sidebar, one button per action, wide layout capped at 1200 px (small CSS rule), results in tabs ("Potential questions", "Practice interview" placeholder, "Fit check & cover letter"; a button switches to its tab and marks it with a green dot until clicked), one expander per question, spinner while the LLM runs, `st.error` if the call fails.
 - [x] 3. Choose an OpenRouter model (`openai/gpt-6-luna`, `anthropic/claude-sonnet-5.5` or `openai/gpt-6.1-sol`; embeddings: `qwen/qwen3-embedding-8b`, `openai/text-embedding-3-small/large`).
   - Default `openai/gpt-6-luna` (`DEFAULT_MODEL` in `core.py`); the user can switch to the other two (see Medium 7). All three support structured outputs and are called through the OpenAI SDK pointed at OpenRouter (`config.get_client()`).
 - [~] 4. Write at least 5 system prompts with different techniques (few-shot, Chain-of-Thought, zero-shot, etc.) and compare which works best.
   - Done: 5 system prompts for the job-opening task in `prompts.py`: `JOB_OPENING_SYSTEM_PROMPT` (zero-shot, used by the app) and the alternatives `_FEW_SHOT`, `_CHAIN_OF_THOUGHT`, `_ROLE`, `_CONSTRAINED`. Also `FIT_SYSTEM_PROMPT` (role + constraints). Techniques used with Claude during development: see Annex. Missing: try the alternatives in the app and note which works best.
-- [ ] 5. Add at least one security guard to prevent misuse.
-  - Only empty-input checks in `landing.py` so far; that is validation, not a guard against misuse.
+- [x] 5. Add at least one security guard to prevent misuse.
+  - `guard.py`, run before every action (`_check_with_guard()` in `landing.py`): (1) length limits per field, (2) an LLM check with the cheapest model (`GUARD_SYSTEM_PROMPT`, `GuardVerdict` schema) that flags prompt injection, off-topic and harmful input. Flagged input shows a warning and the action does not run. Plus: URLs to localhost/private networks are blocked in `web_fetch.py`. Tested: injection in role title and CV, off-topic essay request flagged; normal inputs pass.
 
 ## Easy
 
 - [ ] 1. Ask an LLM to critique the solution (usability, security, prompt engineering).
 - [ ] 2. Improve the prompts for your personal domain (IT, finance, HR, communication, etc.).
-- [ ] 3. More security constraints: user input validation and system prompt validation (possibly LLM-checked).
+- [~] 3. More security constraints: user input validation and system prompt validation (possibly LLM-checked).
+  - User input validation done (`guard.py`: length limits + LLM check; URL blocking in `web_fetch.py`). Missing: "system prompt validation" (e.g. checking the model's answer for leaked system prompt text).
 - [x] 4. Simulate difficulty levels (easy, medium, hard questions).
   - "Question difficulty" slider (both modes). The chosen instruction from `DIFFICULTY_INSTRUCTIONS` (`prompts.py`) is added to the user message; the system prompt stays unchanged.
 - [ ] 5. Optimise prompts for concise vs. detailed responses.
@@ -46,8 +47,8 @@ Legend: `[x]` done · `[~]` partially done · `[ ]` not started
 - [x] 7. Let the user choose from a list of LLMs.
   - "LLM model" select box in the Settings section (`landing.py`), options from `AVAILABLE_MODELS` in `core.py` (the 3 course models, all support structured outputs); passed down to `_ask_llm()`.
 - [ ] 8. Creative use of image generation (`google/gemini-3.1-flash-image`).
-- [ ] 9. Security guard + keep developer settings (model, system prompts) separate from the user experience.
-  - Prompts are separated from the UI (`prompts.py`) and the model choice sits in its own Settings section, but there is no guard yet.
+- [x] 9. Security guard + keep developer settings (model, system prompts) separate from the user experience.
+  - Guard: see Mandatory 5. System prompts live only in `prompts.py` (never shown or editable in the UI); the model and temperature sit in their own Settings section, apart from the user's inputs.
 
 ## Hard
 

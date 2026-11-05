@@ -209,3 +209,46 @@ What would be a good example of what they ask for Mandatory task 5? Let's discus
 
 Works great! Now lets allow fitness check and cover letter for "generic roles" as well
 
+
+## 2026-11-05 17:33  (session 1b86dc2e)
+
+Make the frontend narrower, it is very wide. Also, move the "practice an answer" (rename to practice interview) next to the "Prep brief" tab, which is more related to it. Rename "prep brief" to "Potential questions"
+
+
+## 2026-11-05 17:38  (session 1b86dc2e)
+
+Not so narrow! it went from 100% to.. 50%? Keep it in between
+
+
+## 2026-11-05 17:39  (session 1b86dc2e)
+
+<ide_selection>The user selected the lines 118 to 118 from c:\Users\Sergi\Documents\AI_Engineering\Part1\scanya-AE.AFA.updated0209.1.6\src\scanya_ae_afa_updated0209_1_6\landing.py:
+width
+
+This may or may not be related to the current task.</ide_selection>
+Perfect. Now push and squeeze JUST A BIT vertically, so that the bottom section is better visible on small screens
+
+
+## 2026-11-05 17:40  (session 1b86dc2e)
+
+<ide_selection>The user selected the lines 24 to 24 from c:\Users\Sergi\Documents\AI_Engineering\Part1\scanya-AE.AFA.updated0209.1.6\src\scanya_ae_afa_updated0209_1_6\landing.py:
+3
+
+This may or may not be related to the current task.</ide_selection>
+Now I want to prevent misuse of the llm capacity. Which inputs can I give to jailbreak the app? Then we can think about guardrails to prevent it
+
+
+## 2026-11-05 17:54  (session 1b86dc2e)
+
+True. One frontend thing. If I click on  "Check my cv and write a cover letter", move to the "Fit check & cover letter" automatically, and highlight the tab with light, pale green dot next to the text, to signal that some text was added there. Do the same if the user presses "build my prep brief" with its corresponding tab
+
+
+## 2026-11-05 17:57  (session ef407f0a)
+
+Great, then please do guard options 1+3, but skip 2. Then also remove the Connection OK check. If something is flagged by the LLM, just warn the user and let them continue (I assume you mean that they can give different input). Yes, use the cheapest model for the guard
+
+
+## 2026-11-05 18:13  (session ef407f0a)
+
+Please update Architecture.md and Tasks.md with the relevant changes
+

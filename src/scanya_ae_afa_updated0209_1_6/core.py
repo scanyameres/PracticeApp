@@ -409,14 +409,6 @@ def _ask_llm[T: BaseModel](
     settings = {} if temperature is None else {"temperature": temperature}
 
     client = get_client("OpenRouter")
-
-    # Verify the application-model connection
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompts.CONNECTION_CHECK_PROMPT}],
-    )
-    print("API check:", response.choices[0].message.content)
-
     response = client.chat.completions.parse(
         model=model,
         messages=[

@@ -11,6 +11,7 @@ import streamlit as st
 #from streamlit_authenticator.utilities import LoginError
 
 import scanya_ae_afa_updated0209_1_6.core as appcore
+from scanya_ae_afa_updated0209_1_6 import guard
 from scanya_ae_afa_updated0209_1_6 import cv_reader
 
 # Auth settings and users (gitignored, contains secrets). Template: config.example.yaml.
@@ -21,13 +22,21 @@ OPENING_MODE = "Specific job opening"
 
 st.set_page_config(page_title="Application Assistant", page_icon="✳️", layout="wide")
 
+# Streamlit only offers "centered" (~730 px) or "wide" (full screen). This small CSS rule keeps
+# the wide layout but caps the content at 1200 px and centres it. Change MAX_PAGE_WIDTH to adjust.
+MAX_PAGE_WIDTH = 1200
+st.html(
+    f"<style>[data-testid='stMainBlockContainer'] "
+    f"{{ max-width: {MAX_PAGE_WIDTH}px; margin: 0 auto; }}</style>"
+)
+
 st.title("✳️ Application Assistant and Interview Practice")
 st.caption("By Sergi Canyameres")
 st.write("Prepare for a role, explore likely interview questions, check how well you fit an opening, and get a cover letter.")
 
 # --- Inputs: three equal-height sections side by side ---
 # Fixed-height bordered containers keep the three boxes aligned; content scrolls if it overflows.
-SECTION_HEIGHT = 420
+SECTION_HEIGHT = 360
 role_section, cv_section, settings_section = st.columns(3)
 
 # Left: what the user is preparing for, and the matching inputs.
@@ -46,7 +55,7 @@ with role_section.container(border=True, height=SECTION_HEIGHT):
         job_description = st.text_area(
             "Job opening URL or description",
             placeholder="Paste the job posting URL or role description...",
-            height=220,
+            height=170,
         )
 
 # Middle: the user's CV, as a PDF (drag and drop) or pasted text. An uploaded PDF wins.
@@ -56,7 +65,7 @@ with cv_section.container(border=True, height=SECTION_HEIGHT):
     pasted_cv = st.text_area(
         "...or paste it as text",
         placeholder="Paste your CV or resume here. Needed for the fit check and cover letter.",
-        height=130,
+        height=90,
         disabled=cv_pdf is not None,
     )
     user_cv = pasted_cv
@@ -102,6 +111,49 @@ with settings_section.container(border=True, height=SECTION_HEIGHT):
             "the expected format, or invent details (especially above 1.0). Review results carefully."
         )
 
+# --- Result tabs: names, "new result" dots and the selected tab (drawn further below) ---
+# Tab ids -> visible names. A tab id in st.session_state["new_results"] gets a green dot
+# until the user clicks that tab; st.session_state["active_tab"] holds the selected tab id.
+RESULT_TABS = {
+    "questions": "Potential questions",
+    "practice": "Practice interview",
+    "fit": "Fit check & cover letter",
+}
+NEW_RESULT_DOT = " :green[●]"  # Markdown colour directive, supported in tab labels
+st.session_state.setdefault("new_results", set())
+st.session_state.setdefault("active_tab", "questions")
+
+
+def _tab_label(tab_id: str) -> str:
+    """Visible tab name, plus a green dot if the tab has a result the user hasn't opened yet."""
+    dot = NEW_RESULT_DOT if tab_id in st.session_state["new_results"] else ""
+    return RESULT_TABS[tab_id] + dot
+
+
+def _show_new_result(tab_id: str) -> None:
+    """After a button produced a result: mark its tab as new and switch to it."""
+    st.session_state["new_results"].add(tab_id)
+    st.session_state["active_tab"] = tab_id
+
+
+def _on_tab_click() -> None:
+    """When the user clicks a tab: remember it and remove its green dot."""
+    clicked_label = st.session_state["results_tabs"]
+    tab_id = next(i for i, name in RESULT_TABS.items() if clicked_label.startswith(name))
+    st.session_state["active_tab"] = tab_id
+    st.session_state["new_results"].discard(tab_id)
+
+
+def _check_with_guard(role_title: str, seniority: str, job_description: str, cv: str = "") -> str | None:
+    """Run the security guard on the inputs an action uses. Returns a warning message or None.
+
+    If something is flagged, the caller shows the warning and skips the action, so the user
+    can change the input and click again.
+    """
+    with st.spinner("Checking your input..."):
+        return guard.check_inputs(role_title, seniority, job_description, cv)
+
+
 # --- Actions: each button runs one feature and stores its result in session state ---
 brief_column, fit_column = st.columns(2)
 build_brief = brief_column.button("Build my prep brief", type="primary", width="stretch")
@@ -116,6 +168,8 @@ if build_brief:
         st.error("Add a role title to continue.")
     elif input_mode == OPENING_MODE and not job_description.strip():
         st.error("Paste a job opening URL or description, or switch to a generic role title.")
+    elif guard_message := _check_with_guard(role_title, seniority, job_description):
+        st.warning(guard_message)
     else:
         # Both modes call the LLM. The generic one falls back to stored questions by itself
         # (see plan.fallback_reason); other errors are shown as a message instead of a traceback.
@@ -129,6 +183,7 @@ if build_brief:
                     st.session_state["preparation_plan"] = appcore.build_preparation_plan_opening(
                         job_description, difficulty, model, temperature
                     )
+            _show_new_result("questions")
         except Exception as error:
             st.error(f"Could not generate the brief: {error}")
 
@@ -139,6 +194,8 @@ if check_fit:
         st.error("Add a role title to compare your CV with.")
     elif input_mode == OPENING_MODE and not job_description.strip():
         st.error("Paste a job opening URL or description to compare your CV with.")
+    elif guard_message := _check_with_guard(role_title, seniority, job_description, user_cv):
+        st.warning(guard_message)
     else:
         # Generic mode has no posting, so a short description of the role stands in for it.
         if input_mode == GENERIC_MODE:
@@ -150,13 +207,21 @@ if check_fit:
                 st.session_state["fit_assessment"] = appcore.assess_fit_and_write_cover_letter(
                     user_cv, job_for_fit, model, temperature
                 )
+            _show_new_result("fit")
         except Exception as error:
             st.error(f"Could not check your fit: {error}")
 
 st.divider()
 
 # --- Results: one tab per feature; each shows a hint until its button has been used ---
-brief_tab, fit_tab, practice_tab = st.tabs(("Prep brief", "Fit check & cover letter", "Practice an answer"))
+# Labels can change (green dot on/off), so the selected tab is set through its key before
+# drawing: Streamlit then opens that tab, e.g. the one a button just filled.
+st.session_state["results_tabs"] = _tab_label(st.session_state["active_tab"])
+brief_tab, practice_tab, fit_tab = st.tabs(
+    [_tab_label(tab_id) for tab_id in RESULT_TABS],
+    key="results_tabs",
+    on_change=_on_tab_click,
+)
 
 with brief_tab:
     plan = st.session_state.get("preparation_plan")
@@ -192,7 +257,7 @@ with fit_tab:
         st.download_button("Download cover letter (.txt)", fit.cover_letter, file_name="cover_letter.txt")
 
 with practice_tab:
-    st.info("Coming soon: rehearse an answer to one of your prep questions.")
+    st.info("Coming soon: practice an interview with your potential questions.")
     # Draft implementation, commented out until the feature is built:
     # st.subheader("Rehearse a response")
     # question_options = [question.prompt for question in plan.questions]
