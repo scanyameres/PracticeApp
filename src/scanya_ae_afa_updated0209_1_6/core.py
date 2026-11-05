@@ -1,15 +1,39 @@
-"""Local, deterministic interview-preparation content for the Streamlit prototype.
+"""Interview-preparation logic for the app (no Streamlit code).
 
-Builds a PreparationPlan from a role title (and optional job description) using fixed
-role profiles and keyword matching. No Streamlit code and no external services, so it can
-be unit tested on its own (see tests/test_prep.py).
+Builds a PreparationPlan in one of two ways:
+- build_preparation_plan_generic(): from a role title and seniority, using fixed role
+  profiles and keyword matching. Local and deterministic, no API calls.
+- build_preparation_plan_opening(): from a job description or URL, using the LLM via
+  OpenRouter with structured output (prompts live in prompts.py).
 
-Public entry point: build_preparation_plan().
+And, separately:
+- assess_fit_and_write_cover_letter(): from the user's CV and a job opening, one LLM call
+  returns a FitAssessment (match score, reasoning, cover letter).
 """
 
 from dataclasses import dataclass
 import re
+
+from pydantic import BaseModel, Field
+
+from scanya_ae_afa_updated0209_1_6 import prompts, web_fetch
 from scanya_ae_afa_updated0209_1_6.config import get_client
+
+# OpenRouter models the user can choose from (all support structured outputs).
+# The first one is the default.
+AVAILABLE_MODELS = (
+    "openai/gpt-6-luna",
+    "anthropic/claude-sonnet-5.5",
+    "openai/gpt-6.1-sol",
+)
+DEFAULT_MODEL = AVAILABLE_MODELS[0]
+
+# Models that also accept a `temperature` setting (the models above are reasoning models and
+# do not). Must be on the API key's allow-list (OpenRouter guardrail) and support structured
+# outputs. Offered only when the user opts in to setting the temperature.
+TEMPERATURE_MODELS = (
+    "google/gemini-3.1-flash-image",
+)
 
 
 @dataclass(frozen=True)
@@ -23,12 +47,37 @@ class PracticeQuestion:
 
 @dataclass(frozen=True)
 class PreparationPlan:
-    """The prep brief shown in the app: role summary, focus areas and practice questions."""
+    """The prep brief shown in the app: role title, seniority, summary and practice questions."""
 
     role_title: str
     seniority: str
     role_summary: str
     questions: tuple[PracticeQuestion, ...]
+
+
+class _LLMPlan(BaseModel):
+    """Response schema for the LLM: the PreparationPlan fields, with questions as a list.
+
+    Passed as `response_format` to the API, so the model must answer with JSON matching
+    this schema and the SDK parses it straight into this object (questions become
+    PracticeQuestion instances).
+    """
+
+    role_title: str
+    seniority: str
+    role_summary: str
+    questions: list[PracticeQuestion]
+
+
+class FitAssessment(BaseModel):
+    """How well the user's CV matches a job opening, plus a tailored cover letter.
+
+    Used both as the LLM response schema and as the result shown in the app.
+    """
+
+    match_score: int = Field(ge=0, le=10, description="0 = no match, 10 = perfect match")
+    reasoning: str
+    cover_letter: str
 
 
 @dataclass(frozen=True)
@@ -205,10 +254,10 @@ def build_preparation_plan_generic(
     role_title: str,
     seniority: str = "Mid-level",
 ) -> PreparationPlan:
-    """Create a transparent role-based prep outline without external services.
+    """Build a generic prep plan from a role title, without calling the LLM.
 
-    Picks a role profile, puts up to two detected skills first in the focus areas, adds a
-    skill question (if any) plus two general questions, and keeps at most 7 questions.
+    Picks the matching role profile (or the General one) and returns its summary and
+    questions, plus a behavioral and a motivation question.
     """
     title = role_title.strip() or "Your next role"
     profile = _select_profile(f"{title}")
@@ -235,41 +284,113 @@ def build_preparation_plan_generic(
 
 def build_preparation_plan_opening(
     job_description: str = "",
+    difficulty: str = "Medium",
+    model: str = DEFAULT_MODEL,
+    temperature: float | None = None,
 ) -> PreparationPlan:
-    """Create a transparent role-based prep outline without external services.
+    """Build a personalized prep plan from a job description or URL using the LLM.
 
-    Picks a role profile, puts up to two detected skills first in the focus areas, adds a
-    skill question (if any) plus two general questions, and keeps at most 7 questions.
+    Sends the description to the model with the _LLMPlan schema as structured output, so
+    role title, seniority, summary and questions come back already parsed.
+
+    If the input is a URL, the page is downloaded first (web_fetch.py) and its text is sent.
+    `difficulty` is a key of prompts.DIFFICULTY_INSTRUCTIONS ("Easy", "Medium", "Hard"); its
+    instruction is added to the user message, so the system prompt stays the same.
+    `temperature` is only sent if given (use with TEMPERATURE_MODELS, see _ask_llm).
+
+    Raises:
+        ValueError: if the URL cannot be read, or the model refuses or returns no usable plan.
+        openai.OpenAIError: on API problems (network, invalid key, no provider, ...).
     """
 
+    user_prompt = prompts.JOB_OPENING_USER_PROMPT_TEMPLATE.format(
+        job_description=_job_text(job_description),
+        difficulty_instruction=prompts.DIFFICULTY_INSTRUCTIONS[difficulty],
+    )
+    llm_plan = _ask_llm(prompts.JOB_OPENING_SYSTEM_PROMPT, user_prompt, _LLMPlan, model, temperature)
+
+    return PreparationPlan(
+        role_title=llm_plan.role_title,
+        seniority=llm_plan.seniority,
+        role_summary=llm_plan.role_summary,
+        questions=tuple(llm_plan.questions),
+    )
+
+
+def assess_fit_and_write_cover_letter(
+    cv: str,
+    job_description: str,
+    model: str = DEFAULT_MODEL,
+    temperature: float | None = None,
+) -> FitAssessment:
+    """Compare the user's CV with a job opening and write a cover letter, in one LLM call.
+
+    The job input can be a description or a URL (fetched like in build_preparation_plan_opening).
+    Returns a FitAssessment with a 0-10 match score, the reasoning and the cover letter.
+
+    Raises:
+        ValueError: if the URL cannot be read, or the model refuses or returns nothing usable.
+        openai.OpenAIError: on API problems (network, invalid key, no provider, ...).
+    """
+    user_prompt = prompts.FIT_USER_PROMPT_TEMPLATE.format(
+        cv=cv, job_description=_job_text(job_description)
+    )
+    return _ask_llm(prompts.FIT_SYSTEM_PROMPT, user_prompt, FitAssessment, model, temperature)
+
+
+def _job_text(job_input: str) -> str:
+    """Return the job description text; if the input is a URL, download the page first.
+
+    The LLM cannot open links, so the app fetches the page itself (see web_fetch.py).
+    """
+    if web_fetch.is_url(job_input):
+        return web_fetch.fetch_job_description(job_input)
+    return job_input
+
+
+def _ask_llm[T: BaseModel](
+    system_prompt: str,
+    user_prompt: str,
+    schema: type[T],
+    model: str = DEFAULT_MODEL,
+    temperature: float | None = None,
+) -> T:
+    """Send one system + user message to `model` and return the answer parsed into `schema`.
+
+    Shared by all LLM features. Uses structured output: .parse() sends `schema` as a JSON
+    schema and returns the validated object in .parsed (instead of free text in .content).
+
+    `temperature` is only sent when given: models that do not support it (AVAILABLE_MODELS)
+    would otherwise fail, because require_parameters only accepts providers supporting it.
+    """
+    # Optional settings: only include the ones the user actually set.
+    settings = {} if temperature is None else {"temperature": temperature}
+
     client = get_client("OpenRouter")
-    APP_MODEL = "openai/gpt-6-luna"
-    #system_prompt = ("You are an expert at analyzing job descriptions and extracting relevant information for interview preparation. Your task is to read the provided job description and generate a concise summary of the role, including the role title, seniority level, key responsibilities, and any specific skills or qualifications mentioned. Additionally, identify up to 5 potential interview questions that a candidate might be asked based on the job description. Format your response in JSON with the following structure:\n\n{\n  \"role_title\": \"\",\n  \"seniority\": \"\",\n  \"role_summary\": \"\",\n  \"questions\": [\"\", \"\", \"\", \"\", \"\"]\n}\n\nEnsure that the JSON is valid and properly formatted.")
-    system_prompt = "Open this job description, read about the job description, and extract the role title. Then prepare 5 questions"
-    user_prompt = f"Job description: {job_description}"
-    #JUDGE_MODEL = "openai/gpt-5.4-mini"
 
     # Verify the application-model connection
     response = client.chat.completions.create(
-        model=APP_MODEL,
-        messages=[{"role": "user", "content": "Say 'connection OK' in exactly two words."}],
+        model=model,
+        messages=[{"role": "user", "content": prompts.CONNECTION_CHECK_PROMPT}],
     )
     print("API check:", response.choices[0].message.content)
-  
-    response = client.chat.completions.create(
-        model=APP_MODEL,
+
+    response = client.chat.completions.parse(
+        model=model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
+        response_format=schema,
+        **settings,
+        # OpenRouter-specific: only route to providers that support every parameter we
+        # send (structured outputs, temperature), instead of silently ignoring them.
+        extra_body={"provider": {"require_parameters": True}},
     )
-    llm_questions = response.choices[0].message.content
-    return PreparationPlan(
-        role_title="Placeholder role",
-        seniority="Placeholder exp",
-        role_summary="Placeholder summary",
-        questions=llm_questions
-    )
+    parsed = response.choices[0].message.parsed
+    if parsed is None:  # The model refused or returned nothing usable.
+        raise ValueError(f"LLM did not return a usable answer: {response.choices[0].message.refusal}")
+    return parsed
     # questions.extend(
     #     (
     #         PracticeQuestion(

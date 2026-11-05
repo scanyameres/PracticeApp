@@ -1,165 +1,229 @@
+"""Streamlit UI: an input dashboard (CV + job), action buttons, and a results area in tabs.
+
+Run with start_app.bat (or `uv run streamlit run src/scanya_ae_afa_updated0209_1_6/landing.py`).
+All logic lives in core.py; this file only collects inputs, calls core and shows results.
+"""
+
 from pathlib import Path
 import streamlit as st
 
 #import streamlit_authenticator as stauth
 #from streamlit_authenticator.utilities import LoginError
 
-import scanya_ae_afa_updated0209_1_6.core as appcore 
+import scanya_ae_afa_updated0209_1_6.core as appcore
 
 # Auth settings and users (gitignored, contains secrets). Template: config.example.yaml.
 # AUTH_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
+GENERIC_MODE = "Generic role title and experience"
+OPENING_MODE = "Specific job opening"
+
 st.set_page_config(page_title="Application Assistant", page_icon="✳️", layout="wide")
 
-# --- Sidebar: brief inputs ---
+st.title("✳️ Application Assistant and Interview Practice")
+st.caption("By Sergi Canyameres")
+st.write("Prepare for a role, explore likely interview questions, check how well you fit an opening, and get a cover letter.")
+
+# --- Sidebar: technical settings, kept apart from the main user inputs ---
 with st.sidebar:
-    st.title("✳️ Application Assistant and Interview Practice")
-    st.caption("By Sergi Canyameres")
-
-    st.header("Prepare your inputs")
-    user_cv = st.text_area(
-        "Your CV / resume (optional)",
-        placeholder="Paste your CV or resume here to get better results.",
-        height=100,
+    st.header("⚙️ Settings")
+    # Opting in to temperature switches the model list to TEMPERATURE_MODELS, the only ones
+    # here that accept it. Otherwise temperature stays None and is not sent at all.
+    use_temperature = st.toggle(
+        "Set temperature (experimental)",
+        help="The default models do not accept a temperature setting, so a different model is used.",
     )
-    input_mode = st.radio("What are you preparing?", ("Generic role title and experience", "Specific job opening"))
+    model = st.selectbox(
+        "LLM model",
+        appcore.TEMPERATURE_MODELS if use_temperature else appcore.AVAILABLE_MODELS,
+        help="OpenRouter model used for all AI features. The generic role brief does not use a model.",
+    )
+    temperature = None
+    if use_temperature:
+        temperature = st.slider(
+            "Temperature", 0.0, 2.0, 0.7, 0.1,
+            help="Low = focused and repeatable answers. High = more varied and creative, but less reliable.",
+        )
+        st.warning(
+            "**Experimental settings.** This uses a different model than the default ones, which may:\n"
+            "- give lower-quality or less tailored questions and cover letters;\n"
+            "- fail to return the expected format more often, causing errors;\n"
+            "- invent details (e.g. experience not in your CV), especially at high temperature (> 1.0).\n\n"
+            "Review the results carefully. Switch the toggle off to go back to the default models."
+        )
 
-
-    if input_mode == "Generic role title and experience":
+# --- Inputs: CV on the left, role or job opening on the right ---
+cv_column, job_column = st.columns(2)
+with cv_column:
+    user_cv = st.text_area(
+        "Your CV / resume",
+        placeholder="Paste your CV or resume here. Needed for the fit check and cover letter.",
+        height=250,
+    )
+with job_column:
+    input_mode = st.radio("What are you preparing?", (GENERIC_MODE, OPENING_MODE), horizontal=True)
+    role_title, seniority, job_description, difficulty = "", "", "", "Medium"
+    if input_mode == GENERIC_MODE:
         role_title = st.text_input("Role title", value="Software Engineer")
         seniority = st.selectbox(
             "Experience level",
             ("Early career", "Mid-level", "Senior", "Lead / Manager"),
             index=1,
         )
-    
-    job_description = ""
-    if input_mode == "Specific job opening":
+    else:
         job_description = st.text_area(
             "Job opening URL or description",
             placeholder="Paste the job posting URL or role description...",
-            height=100,
+            height=170,
         )
+        difficulty = st.select_slider("Question difficulty", ("Easy", "Medium", "Hard"), value="Medium")
 
-    # Validate inputs, build the plan, store it in session state, then rerun to show it.
-    if st.button("Build my prep brief", type="primary", width="stretch"):
-        if input_mode == "Generic role title and experience" and not role_title.strip():
-            st.error("Add a role title to continue.")
-        elif input_mode == "Specific job opening" and not job_description.strip():
-            st.error("Paste a job opening URL or description, or switch to starting with a role title.")
-        else:
-            if input_mode == "Generic role title and experience":
-                st.session_state["preparation_plan"] = appcore.build_preparation_plan_generic(role_title, seniority)
-            elif input_mode == "Specific job opening":
-                st.session_state["preparation_plan"] = appcore.build_preparation_plan_opening(job_description)
+# --- Actions: each button runs one feature and stores its result in session state ---
+brief_column, fit_column = st.columns(2)
+build_brief = brief_column.button("Build my prep brief", type="primary", width="stretch")
+check_fit = fit_column.button(
+    "Check my fit & write a cover letter",
+    width="stretch",
+    disabled=input_mode != OPENING_MODE,
+    help="Needs your CV and a specific job opening.",
+)
 
-            st.session_state.pop("saved_practice_answer", None)
-            st.rerun()
+if build_brief:
+    if input_mode == GENERIC_MODE and not role_title.strip():
+        st.error("Add a role title to continue.")
+    elif input_mode == OPENING_MODE and not job_description.strip():
+        st.error("Paste a job opening URL or description, or switch to a generic role title.")
+    elif input_mode == GENERIC_MODE:
+        st.session_state["preparation_plan"] = appcore.build_preparation_plan_generic(role_title, seniority)
+    else:
+        # LLM path: API or parsing errors are shown as a message instead of a traceback.
+        try:
+            with st.spinner("Generating your prep brief..."):
+                st.session_state["preparation_plan"] = appcore.build_preparation_plan_opening(
+                    job_description, difficulty, model, temperature
+                )
+        except Exception as error:
+            st.error(f"Could not generate the brief: {error}")
 
+if check_fit:
+    if not user_cv.strip():
+        st.error("Paste your CV to check your fit and get a cover letter.")
+    elif not job_description.strip():
+        st.error("Paste a job opening URL or description to compare your CV with.")
+    else:
+        try:
+            with st.spinner("Comparing your CV with the job and writing a cover letter..."):
+                st.session_state["fit_assessment"] = appcore.assess_fit_and_write_cover_letter(
+                    user_cv, job_description, model, temperature
+                )
+        except Exception as error:
+            st.error(f"Could not check your fit: {error}")
 
-    # --- Sidebar: optional login (streamlit-authenticator, see docs/streamlit-auth.md) ---
+st.divider()
 
-    # # The app works fully without it; logged-in users will later get saved history.
-    # st.divider()
-    # if not AUTH_CONFIG_PATH.exists():
-    #     st.caption("Login unavailable: copy `config.example.yaml` to `config.yaml` to enable it.")
-    # else:
-    #     # login_sleep_time=0: skip the library's default 0.7 s pause on every rerun while logged out.
-    #     authenticator = stauth.Authenticate(str(AUTH_CONFIG_PATH), login_sleep_time=0)
-    #     auth_status = st.session_state.get("authentication_status")
-    #     if auth_status:
-    #         st.write(f"Signed in as **{st.session_state.get('name')}**")
-    #         authenticator.logout(location="main", key="Logout")
-    #         if not st.session_state.get("authentication_status"):
-    #             st.rerun()  # redraw the sidebar as logged out right away
+# --- Results: one tab per feature; each shows a hint until its button has been used ---
+brief_tab, fit_tab, practice_tab = st.tabs(("Prep brief", "Fit check & cover letter", "Practice an answer"))
+
+with brief_tab:
+    plan = st.session_state.get("preparation_plan")
+    if not isinstance(plan, appcore.PreparationPlan):
+        st.info("Click **Build my prep brief** to get likely interview questions for the role.")
+    else:
+        st.subheader(f"{plan.role_title} · {plan.seniority}")
+        st.write(plan.role_summary)
+        st.markdown(f"**Questions to explore ({len(plan.questions)})**")
+        # Both input modes produce PracticeQuestion objects, so they render the same way.
+        for index, question in enumerate(plan.questions, start=1):
+            with st.expander(f"{index}. {question.prompt}"):
+                st.markdown(f"**{question.category}**")
+                st.write(question.why_it_matters)
+
+with fit_tab:
+    fit = st.session_state.get("fit_assessment")
+    if not isinstance(fit, appcore.FitAssessment):
+        st.info("Paste your CV and a job opening, then click **Check my fit & write a cover letter**.")
+    else:
+        st.metric("Match score", f"{fit.match_score} / 10")
+        st.progress(fit.match_score / 10)
+        st.write(fit.reasoning)
+
+        st.subheader("Cover letter")
+        with st.container(border=True):
+            st.write(fit.cover_letter)
+        st.download_button("Download cover letter (.txt)", fit.cover_letter, file_name="cover_letter.txt")
+
+with practice_tab:
+    st.info("Coming soon: rehearse an answer to one of your prep questions.")
+    # Draft implementation, commented out until the feature is built:
+    # st.subheader("Rehearse a response")
+    # question_options = [question.prompt for question in plan.questions]
+    # selected_prompt = st.selectbox("Choose a question", question_options, key="practice_question")
+    # selected_question = next(question for question in plan.questions if question.prompt == selected_prompt)
+    # st.caption(f"{selected_question.category} · {selected_question.why_it_matters}")
+    #
+    # answer = st.text_area(
+    #     "Draft your answer",
+    #     placeholder="What was happening, what did you do, and what changed?",
+    #     height=190,
+    #     key="practice_answer",
+    # )
+    # st.markdown("**Quick self-review**")
+    # checks = (
+    #     st.checkbox("I set the context", key="review_context"),
+    #     st.checkbox("I explained my actions", key="review_actions"),
+    #     st.checkbox("I shared an outcome", key="review_outcome"),
+    # )
+    # completed_checks = sum(checks)
+    # st.progress(
+    #     completed_checks / len(checks),
+    #     text=f"{completed_checks} of {len(checks)} answer elements covered",
+    # )
+    #
+    # # For now the draft lives only in session state; it will become the per-user history.
+    # if st.button("Save practice draft", type="primary"):
+    #     if not answer.strip():
+    #         st.warning("Write a few notes before saving your practice draft.")
     #     else:
-    #         with st.expander("Log in to save your work", expanded=auth_status is False):
-    #             try:
-    #                 authenticator.login(location="main")
-    #             except LoginError as e:
-    #                 st.error(e)
-    #             new_status = st.session_state.get("authentication_status")
-    #             if new_status:
-    #                 st.rerun()  # redraw the sidebar as signed in right away
-    #             elif new_status is False:
-    #                 st.error("Username/password is incorrect")
-
-
-# --- Main area ---
-st.title("Application Assistant and Interview Practice")
-st.write("Prepare for a role, explore likely interview topics, practice your answers, and generate a cover letter.")
-
-plan = st.session_state.get("preparation_plan")
-if not isinstance(plan, appcore.PreparationPlan):
-    # No brief yet: show a short introduction.
-    st.info("Enter a role title or job description in the sidebar to get started.")
-    st.subheader("What you can do")
-    first, second = st.columns(2)
-    with first:
-        st.markdown("**Prepare with focus**")
-        st.write("Get role-relevant topics and example questions to explore.")
-    with second:
-        st.markdown("**Practice an answer**")
-        st.write("Draft a response and review its context, actions, and outcome.")
-else:
-    # A brief exists: show its summary, then the brief and practice tabs.
-    st.subheader(f"{plan.role_title} · {plan.seniority}")
-    st.write(plan.role_summary)
-
-    metrics = st.columns(2)
-    metrics[0].metric("Practice questions", len(plan.questions))
-
-    brief_tab, practice_tab = st.tabs(("Prep brief", "Practice an answer"))
-    with brief_tab:
-        st.subheader("Questions to explore")
-        if input_mode == "Generic role title and experience":
-            for index, question in enumerate(plan.questions, start=1):
-                with st.expander(f"{index}. {question.prompt}"):
-                    st.markdown(f"**{question.category}**")
-                    st.write(question.why_it_matters)
-        elif input_mode == "Specific job opening":
-            st.write(plan.questions)
-
-    # with practice_tab:
-    #     st.subheader("Rehearse a response")
-    #     question_options = [question.prompt for question in plan.questions]
-    #     selected_prompt = st.selectbox("Choose a question", question_options, key="practice_question")
-    #     selected_question = next(question for question in plan.questions if question.prompt == selected_prompt)
-    #     st.caption(f"{selected_question.category} · {selected_question.why_it_matters}")
-
-    #     answer = st.text_area(
-    #         "Draft your answer",
-    #         placeholder="What was happening, what did you do, and what changed?",
-    #         height=190,
-    #         key="practice_answer",
-    #     )
-    #     st.markdown("**Quick self-review**")
-    #     checks = (
-    #         st.checkbox("I set the context", key="review_context"),
-    #         st.checkbox("I explained my actions", key="review_actions"),
-    #         st.checkbox("I shared an outcome", key="review_outcome"),
-    #     )
-    #     completed_checks = sum(checks)
-    #     st.progress(
-    #         completed_checks / len(checks),
-    #         text=f"{completed_checks} of {len(checks)} answer elements covered",
-    #     )
-
-    #     # For now the draft lives only in session state; it will become the per-user history.
-    #     if st.button("Save practice draft", type="primary"):
-    #         if not answer.strip():
-    #             st.warning("Write a few notes before saving your practice draft.")
-    #         else:
-    #             st.session_state["saved_practice_answer"] = {
-    #                 "question": selected_prompt,
-    #                 "answer": answer.strip(),
-    #                 "checks": completed_checks,
-    #             }
-    #             st.success("Draft saved in this browser session.")
-
-    #     saved_answer = st.session_state.get("saved_practice_answer")
-    #     if saved_answer and saved_answer["question"] == selected_prompt:
-    #         st.caption("Your draft is held in Streamlit session state, not stored permanently.")
+    #         st.session_state["saved_practice_answer"] = {
+    #             "question": selected_prompt,
+    #             "answer": answer.strip(),
+    #             "checks": completed_checks,
+    #         }
+    #         st.success("Draft saved in this browser session.")
+    #
+    # saved_answer = st.session_state.get("saved_practice_answer")
+    # if saved_answer and saved_answer["question"] == selected_prompt:
+    #     st.caption("Your draft is held in Streamlit session state, not stored permanently.")
 
 st.divider()
 st.caption("Early prototype · Prep suggestions are illustrative, not an assessment.")
+
+
+# --- Not active yet: kept for later features ---
+
+# Optional login (streamlit-authenticator, see docs/streamlit-auth.md).
+# with st.sidebar:
+#     # The app works fully without it; logged-in users will later get saved history.
+#     st.divider()
+#     if not AUTH_CONFIG_PATH.exists():
+#         st.caption("Login unavailable: copy `config.example.yaml` to `config.yaml` to enable it.")
+#     else:
+#         # login_sleep_time=0: skip the library's default 0.7 s pause on every rerun while logged out.
+#         authenticator = stauth.Authenticate(str(AUTH_CONFIG_PATH), login_sleep_time=0)
+#         auth_status = st.session_state.get("authentication_status")
+#         if auth_status:
+#             st.write(f"Signed in as **{st.session_state.get('name')}**")
+#             authenticator.logout(location="main", key="Logout")
+#             if not st.session_state.get("authentication_status"):
+#                 st.rerun()  # redraw the sidebar as logged out right away
+#         else:
+#             with st.expander("Log in to save your work", expanded=auth_status is False):
+#                 try:
+#                     authenticator.login(location="main")
+#                 except LoginError as e:
+#                     st.error(e)
+#                 new_status = st.session_state.get("authentication_status")
+#                 if new_status:
+#                     st.rerun()  # redraw the sidebar as signed in right away
+#                 elif new_status is False:
+#                     st.error("Username/password is incorrect")

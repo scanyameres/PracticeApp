@@ -14,8 +14,8 @@ def get_client(API_provider) -> OpenAI:
         )
 
         # List available models for the specified API provider
-        for m in sorted(client.models.list(), key=lambda m: m.id):
-            print(m.id)
+        # for m in sorted(client.models.list(), key=lambda m: m.id):
+        #    print(m.id)
 
     elif API_provider == "OpenAI":
         client = OpenAI(
