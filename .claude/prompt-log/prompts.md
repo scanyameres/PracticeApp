@@ -515,3 +515,27 @@ llm_plan
 This may or may not be related to the current task.</ide_selection>
 Can you remind me why did we keep two similar functions for preparing plan generic vs job opening? What are the differences?
 
+
+## 2026-11-09 11:37  (session d7f531bd)
+
+<ide_opened_file>The user opened the file c:\Users\Sergi\Documents\AI_Engineering\Part1\scanya-AE.AFA.updated0209.1.6\src\scanya_ae_afa_updated0209_1_6\actions.py in the IDE. This may or may not be related to the current task.</ide_opened_file>
+Where in the code can I see where the vector embeddings are done AND checkec when "suggesting interview questions" may be repeated or similar?
+
+
+## 2026-11-09 11:59  (session d7f531bd)
+
+<ide_selection>The user selected the lines 45 to 45 from c:\Users\Sergi\Documents\AI_Engineering\Part1\scanya-AE.AFA.updated0209.1.6\src\scanya_ae_afa_updated0209_1_6\core.py:
+check
+
+This may or may not be related to the current task.</ide_selection>
+At which points are the inputs are reviewed for safety check? Which inputs are reviewed? Do they all go through the same review? Where?
+
+
+## 2026-11-09 12:00  (session d7f531bd)
+
+<ide_selection>The user selected the lines 163 to 163 from c:\Users\Sergi\Documents\AI_Engineering\Part1\scanya-AE.AFA.updated0209.1.6\src\scanya_ae_afa_updated0209_1_6\landing.py:
+_check_with_guard
+
+This may or may not be related to the current task.</ide_selection>
+Dont change the code, but "_check_with_guard" is quite useless, right? Why not call check_inputs directly?
+

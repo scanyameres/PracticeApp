@@ -12,6 +12,14 @@ credentials:
       logged_in: true
       password: $2b$12$RyQTk7EBFsxy9QCfS3mBHen9PyNxY/Gj8zwRqVKAQG19WkgO8XYyG
       roles: null
+    lindauer:
+      email: fakelindau@gmail.com
+      failed_login_attempts: 0
+      first_name: Lindau
+      last_name: Insel
+      logged_in: false
+      password: $2b$12$TgcSymCaLmNB5Elwlx9M/.9HJvypPX/5SaPYg/WH/Ynw5D8BTfHvG
+      roles: null
     sergi:
       email: fakemail@gmail.com
       failed_login_attempts: 0
