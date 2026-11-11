@@ -539,3 +539,8 @@ _check_with_guard
 This may or may not be related to the current task.</ide_selection>
 Dont change the code, but "_check_with_guard" is quite useless, right? Why not call check_inputs directly?
 
+
+## 2026-11-11 10:17  (session fc84c489)
+
+This project used to run without problems. I recently renamed a few folders and now it seems to be broken. If I click "start-app.bat" I get uv error. Can you figure out what the broken path is?
+
