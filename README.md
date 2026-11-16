@@ -6,10 +6,11 @@ Task description: [115.md](115.md).
 ## Features
 
 - **Prep brief:** likely interview questions for a role title + experience level, or for a specific job opening (pasted description or URL), at an easy, medium or hard level.
+- **Practice interview:** a chat with an AI hiring manager who asks your brief's questions one by one and digs deeper when an answer is vague (up to 4 answers per question). At the end you get feedback with two scores (1-5): answer quality and role fit, overall and per question. You can end the interview early (feedback on the questions answered so far) and download the transcript with the feedback as a Markdown file.
 - **Fit check & cover letter:** compares your CV (PDF or pasted text) with the job, gives a 0-10 match score with reasoning, and writes a cover letter.
 - **Settings and costs:** choose the model, max tokens, question difficulty and (experimental) temperature; see an estimated maximum cost before sending, and the real cost of each action plus a session total afterwards.
 - **Security guard:** every input is checked for misuse (prompt injection, off-topic requests) before any feature runs.
-- **Optional login with history:** logged-in users get their job profiles saved, new questions for jobs similar to ones they prepared before, and suggestions of the closest roles they already prepared for.
+- **Optional login with history:** logged-in users get their job profiles saved (including practice interviews with their scores and transcript), new questions for jobs similar to ones they prepared before, and suggestions of the closest roles they already prepared for.
 
 ## Setup
 

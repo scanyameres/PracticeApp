@@ -2,17 +2,19 @@
 
 Run with start_app.bat (or `uv run streamlit run src/scanya_ae_afa_updated0209_1_6/landing.py`).
 This file only draws the page, validates inputs, and shows results; the work is done by:
-actions.py (logic behind the buttons), guard.py (input checks), auth.py (login box),
-cv_reader.py (CV PDFs), pricing.py (request costs), user_store.py (history tab).
+actions.py (logic behind the buttons), interview.py (practice interview chat), guard.py
+(input checks), auth.py (login box), cv_reader.py (CV PDFs), pricing.py (request costs),
+user_store.py (history tab).
 
 Page order (Streamlit reruns this script top to bottom on every click):
-header + login -> input panels + buttons -> button actions -> costs -> result tabs.
+header + login -> input panels + buttons -> button actions -> result tabs (the practice
+interview makes its LLM calls here) -> costs (drawn into the Settings panel placeholder).
 """
 
 import streamlit as st
 
 import scanya_ae_afa_updated0209_1_6.core as appcore
-from scanya_ae_afa_updated0209_1_6 import actions, auth, cv_reader, guard, pricing, user_store
+from scanya_ae_afa_updated0209_1_6 import actions, auth, cv_reader, guard, interview, pricing, user_store
 
 GENERIC_MODE = "Generic role title and experience"
 OPENING_MODE = "Specific job opening"
@@ -106,7 +108,7 @@ with settings_section.container(border=True, height=SECTION_HEIGHT):
     )
 
     # Request costs, shown here in the Settings panel. Reserved now, filled at the end of
-    # the actions below (costs are only known after the buttons have run). st.empty() (not
+    # the script (costs are only known after the actions have run). st.empty() (not
     # settings_section.empty()) so the placeholder goes inside this bordered container.
     cost_area = st.empty()
 
@@ -195,6 +197,8 @@ if build_brief:
                     username, role_title, seniority, job_description, difficulty, model,
                     temperature, max_tokens,
                 )
+            # Which inputs the questions are for (the interview compares them with the fit check's).
+            st.session_state["questions_inputs"] = (role_title.strip(), seniority, job_description.strip())
             _show_new_result("questions")
         except Exception as error:
             st.error(f"Could not generate the brief: {error}")
@@ -216,29 +220,28 @@ if check_fit:
                     username, user_cv, role_title, seniority, job_description, model,
                     temperature, max_tokens,
                 )
+            st.session_state["fit_inputs"] = (role_title.strip(), seniority, job_description.strip())
             _show_new_result("fit")
         except Exception as error:
             st.error(f"Could not check your fit: {error}")
 
 
-# --- Request costs (Medium task 3), drawn into cost_area in the Settings panel ---
-# Add this click's requests (guard check, embedding, main LLM call: whatever ran) to the totals.
+# --- Request costs (Medium task 3): add each action's requests to the totals ---
+# The totals are drawn at the end of the script, into cost_area in the Settings panel.
 st.session_state.setdefault("session_cost", 0.0)
-if build_brief or check_fit:
+
+
+def _record_action_cost() -> None:
+    """Add the requests made since pricing.start_tracking() (guard check, embedding, LLM calls:
+    whatever ran) to "last action" and the session total. Call once at the end of each action."""
     action_cost, action_requests = pricing.tracked_cost()
     if action_requests:
         st.session_state["last_cost"] = (action_cost, action_requests)
         st.session_state["session_cost"] += action_cost
 
-with cost_area.container():
-    estimate = pricing.estimate_max_cost(model, max_tokens)
-    lines = []
-    if estimate is not None:
-        lines.append(f"Estimated max cost: **{pricing.format_usd(estimate)}**")
-    if last := st.session_state.get("last_cost"):
-        lines.append(f"Last action: **{pricing.format_usd(last[0])}** ({last[1]} requests)")
-        lines.append(f"Session total: **{pricing.format_usd(st.session_state['session_cost'])}**")
-    st.caption("  \n".join(lines))
+
+if build_brief or check_fit:
+    _record_action_cost()
 
 st.divider()
 
@@ -325,49 +328,181 @@ with history_tab:
                     st.markdown(f"**Fit: {profile['fit']['match_score']} / 10**")
                     st.write(profile["fit"]["reasoning"])
                     st.text_area("Cover letter", profile["fit"]["cover_letter"], height=150, key=f"letter_{profile['key']}")
+                # Practice interviews (older profiles have no "interviews" list).
+                for number, record in enumerate(profile.get("interviews", []), start=1):
+                    answered = record["answered_questions"]
+                    total = record["total_questions"]
+                    scope = f"{answered} questions" if answered == total else f"{answered} of {total} questions, ended early"
+                    st.markdown(
+                        f"**Practice interview {record['date'][:10]}** ({scope}): answer quality "
+                        f"**{record['answer_score']} / 5**, role fit **{record['fit_score']} / 5**"
+                    )
+                    st.write(record["summary"])
+                    st.download_button(
+                        "Download transcript and feedback", record["transcript"],
+                        file_name=f"practice_interview_{record['date'][:10]}.md", mime="text/markdown", on_click="ignore",
+                        key=f"interview_{profile['key']}_{number}",
+                    )
 
 with practice_tab:
-    st.info("Coming soon: practice an interview with your potential questions.")
-    # Draft implementation, commented out until the feature is built:
-    # st.subheader("Rehearse a response")
-    # question_options = [question.prompt for question in plan.questions]
-    # selected_prompt = st.selectbox("Choose a question", question_options, key="practice_question")
-    # selected_question = next(question for question in plan.questions if question.prompt == selected_prompt)
-    # st.caption(f"{selected_question.category} · {selected_question.why_it_matters}")
-    #
-    # answer = st.text_area(
-    #     "Draft your answer",
-    #     placeholder="What was happening, what did you do, and what changed?",
-    #     height=190,
-    #     key="practice_answer",
-    # )
-    # st.markdown("**Quick self-review**")
-    # checks = (
-    #     st.checkbox("I set the context", key="review_context"),
-    #     st.checkbox("I explained my actions", key="review_actions"),
-    #     st.checkbox("I shared an outcome", key="review_outcome"),
-    # )
-    # completed_checks = sum(checks)
-    # st.progress(
-    #     completed_checks / len(checks),
-    #     text=f"{completed_checks} of {len(checks)} answer elements covered",
-    # )
-    #
-    # # For now the draft lives only in session state; it will become the per-user history.
-    # if st.button("Save practice draft", type="primary"):
-    #     if not answer.strip():
-    #         st.warning("Write a few notes before saving your practice draft.")
-    #     else:
-    #         st.session_state["saved_practice_answer"] = {
-    #             "question": selected_prompt,
-    #             "answer": answer.strip(),
-    #             "checks": completed_checks,
-    #         }
-    #         st.success("Draft saved in this browser session.")
-    #
-    # saved_answer = st.session_state.get("saved_practice_answer")
-    # if saved_answer and saved_answer["question"] == selected_prompt:
-    #     st.caption("Your draft is held in Streamlit session state, not stored permanently.")
+    # One interview at a time, in st.session_state["interview"] (an interview.InterviewState).
+    # "interview_source" is the QuestionsResult it was started from, to notice newer questions.
+    questions_result = st.session_state.get("questions_result")
+    state = st.session_state.get("interview")
+
+    if state is None:
+        if not isinstance(questions_result, actions.QuestionsResult):
+            st.info("Click **Suggest interview questions** first, then practise them here in a mock interview.")
+        else:
+            plan = questions_result.plan
+            st.markdown(
+                f"Practise a mock interview for **{plan.role_title}**. A hiring manager (the AI) asks "
+                f"your questions one by one and may dig deeper when an answer is vague (up to "
+                f"{interview.MAX_ANSWERS_PER_QUESTION} answers per question). At the end you get "
+                "feedback with two scores: **answer quality** and **role fit**."
+            )
+            question_count = st.number_input(
+                "Number of questions",
+                min_value=1,
+                max_value=len(plan.questions),
+                value=min(interview.DEFAULT_QUESTION_COUNT, len(plan.questions)),
+                help="Taken from your brief, in order.",
+            )
+            if user_cv.strip():
+                st.caption("Your CV is shared with the interviewer, for more specific follow-up questions.")
+            if st.button("Start practice interview", type="primary"):
+                st.session_state["interview"] = interview.start_interview(
+                    plan, questions_result.job_text, user_cv, int(question_count)
+                )
+                st.session_state["interview_source"] = questions_result
+                st.session_state["interview_inputs"] = st.session_state.get("questions_inputs")
+                st.rerun()
+    else:
+        # Header: progress, and buttons to end early, download the transcript, or start over.
+        info_column, end_column, download_column, new_column = st.columns([3, 1, 1, 1])
+        if state.finished:
+            progress = "Interview finished"
+        else:
+            progress = f"Question {state.question_index + 1} of {len(state.questions)}"
+        info_column.caption(f"Practice interview · {state.role_title} · {progress}")
+        if end_column.button(
+            "End interview", width="stretch",
+            disabled=state.finished or not interview.answered_questions(state),
+            help="Stop now and get feedback on the questions you answered so far.",
+        ):
+            interview.end_early(state)
+            st.session_state["feedback_requested"] = True
+            st.rerun()
+        download_column.download_button(
+            "Download", interview.export_markdown(state), file_name="practice_interview.md",
+            mime="text/markdown", width="stretch", on_click="ignore",
+            help="The transcript as a Markdown file (with the feedback, once it is ready).",
+        )
+        if new_column.button("New interview", width="stretch"):
+            del st.session_state["interview"]
+            st.rerun()
+        if questions_result is not st.session_state.get("interview_source"):
+            st.info("You generated new questions. Click **New interview** to practise those.")
+
+        for message in state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        if not state.finished:
+            answer = st.chat_input(
+                "Your answer...", max_chars=interview.MAX_ANSWER_LENGTH, submit_mode="disable"
+            )
+            if answer:
+                with st.chat_message("user"):
+                    st.markdown(answer)
+                pricing.start_tracking()
+                replied = False
+                try:
+                    with st.spinner("The interviewer is thinking..."):
+                        interview.reply(state, answer, model, temperature, max_tokens)
+                    replied = True
+                except Exception as error:
+                    # The interview state is unchanged, so the user can simply send the answer again.
+                    st.error(f"Could not get the interviewer's reply, please send your answer again. ({error})")
+                _record_action_cost()  # also after an error: a cut-off answer is still billed
+                if replied:
+                    # After the last question, the feedback is requested once automatically.
+                    st.session_state["feedback_requested"] = state.finished
+                    st.rerun()  # redraw the chat from the updated state
+
+        # After the last question (or End interview): the feedback (one more LLM call), saved to
+        # the history if logged in. It runs once automatically, then only on a button click, so a
+        # failing call is not retried on every page rerun.
+        if state.finished and state.feedback is None:
+            if st.session_state.pop("feedback_requested", False):
+                pricing.start_tracking()
+                got_feedback = False
+                try:
+                    with st.spinner("Preparing your feedback..."):
+                        st.session_state["interview_saved"] = actions.finish_interview(
+                            username, st.session_state["interview_source"].history_key, state,
+                            model, temperature, max_tokens,
+                        )
+                    got_feedback = True
+                except Exception as error:
+                    st.error(f"Could not prepare the feedback: {error}")
+                _record_action_cost()
+                if got_feedback:
+                    st.rerun()  # redraw the page, so "My history" (drawn above) shows the interview
+            if state.feedback is None:
+                st.button(
+                    "Get my feedback", type="primary",
+                    on_click=lambda: st.session_state.update(feedback_requested=True),
+                )
+
+        if state.feedback is not None:
+            feedback = state.feedback
+            st.subheader("Interview feedback")
+            answer_column, fit_column = st.columns(2)
+            answer_column.metric(
+                "Answer quality", f"{feedback.overall_answer_score} / 5",
+                help="How good your answers are as interview answers: structure, concrete examples, your own contribution.",
+            )
+            fit_column.metric(
+                "Role fit", f"{feedback.overall_fit_score} / 5",
+                help="How well your answers show what this job (or, without a posting, a typical role at this level) asks for.",
+            )
+            st.write(feedback.summary)
+            if state.ended_early:
+                st.caption(
+                    f"Interview ended early: feedback on the {len(interview.answered_questions(state))} "
+                    f"of {len(state.questions)} questions you answered."
+                )
+            if st.session_state.get("interview_saved"):
+                st.caption("Saved to *My history*, with the transcript.")
+            elif username:
+                st.caption("Not saved: these questions are not in your history (e.g. backup questions).")
+            else:
+                st.caption("Log in to save your interviews and feedback in *My history*.")
+            # The CV-based fit check, if it was run for the same job as these questions.
+            fit_result = st.session_state.get("fit_result")
+            if fit_result is not None and st.session_state.get("fit_inputs") == st.session_state.get("interview_inputs"):
+                st.caption(
+                    f"For comparison, your CV fit check for this job scored "
+                    f"**{fit_result.fit.match_score} / 10** (see *Fit check & cover letter*)."
+                )
+            for number, item in enumerate(feedback.per_question, start=1):
+                with st.expander(
+                    f"{number}. {item.question} · answer {item.answer_score}/5 · fit {item.fit_score}/5"
+                ):
+                    st.markdown(f"**Strengths:** {item.strengths}")
+                    st.markdown(f"**To improve:** {item.improvements}")
+
+# --- Request costs, drawn into cost_area in the Settings panel (after all actions have run) ---
+with cost_area.container():
+    estimate = pricing.estimate_max_cost(model, max_tokens)
+    lines = []
+    if estimate is not None:
+        lines.append(f"Estimated max cost: **{pricing.format_usd(estimate)}**")
+    if last := st.session_state.get("last_cost"):
+        lines.append(f"Last action: **{pricing.format_usd(last[0])}** ({last[1]} requests)")
+        lines.append(f"Session total: **{pricing.format_usd(st.session_state['session_cost'])}**")
+    st.caption("  \n".join(lines))
 
 st.divider()
 st.caption("Early prototype · Prep suggestions are illustrative, not an assessment.")

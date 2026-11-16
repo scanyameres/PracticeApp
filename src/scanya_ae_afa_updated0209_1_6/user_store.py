@@ -5,7 +5,9 @@ A job profile is one distinct job input (a role title + level, or a job descript
 stores:
 - "embedding": the input's embedding vector (from core.embed_text), to compare by meaning;
 - "questions": every question generated for it so far;
-- "fit": the latest fit check and cover letter (or None).
+- "fit": the latest fit check and cover letter (or None);
+- "interviews": every finished practice interview (scores, summary, Markdown transcript);
+  missing in profiles saved before this feature.
 
 Similarity search: cosine similarity between the new input's embedding and every stored
 embedding, computed with numpy. Used to (1) avoid repeating questions for similar jobs,
@@ -115,6 +117,23 @@ def save_fit(username: str, job_input: str, embedding: list[float], fit, label: 
     _save_profile(username, profile)
 
 
+def save_interview(username: str, job_input: str, interview: dict) -> bool:
+    """Add a finished practice interview to the job profile its questions came from.
+
+    `interview` is a plain dict (built by actions.finish_interview: date, scores, transcript...).
+    Only added to an existing profile (the brief is saved there first). Returns False if the
+    user has no profile for `job_input` (e.g. backup questions, which are never saved).
+    """
+    key = make_key(job_input)
+    profile = next((p for p in load_profiles(username) if p["key"] == key), None)
+    if profile is None:
+        return False
+    # Profiles saved before this feature have no "interviews" list yet.
+    profile.setdefault("interviews", []).append(interview)
+    _save_profile(username, profile)
+    return True
+
+
 def _user_file(username: str) -> Path:
     """Path of the user's JSON file (username made safe for a file name)."""
     safe_name = re.sub(r"[^a-z0-9_-]", "_", username.casefold())
@@ -137,6 +156,7 @@ def _get_or_create(username: str, job_input: str, embedding: list[float]) -> dic
         "embedding": [round(value, 6) for value in embedding],
         "questions": [],
         "fit": None,
+        "interviews": [],
     }
 
 

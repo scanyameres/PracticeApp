@@ -544,3 +544,37 @@ Dont change the code, but "_check_with_guard" is quite useless, right? Why not c
 
 This project used to run without problems. I recently renamed a few folders and now it seems to be broken. If I click "start-app.bat" I get uv error. Can you figure out what the broken path is?
 
+
+## 2026-11-16 13:30  (session 4920607f)
+
+From all the "practice app" or similar interview preparation apps that you can find, is this the newest version in my machine? Is it up to date with github?
+
+
+## 2026-11-16 13:46  (session 4920607f)
+
+Good. I would like to continue this project a bit, just to refine open parts that were mentioned in the review. For these parts I dont need to be as directly involved as before, so I can trust you to implement on your own.
+The first main change is that, once the user receives questions to prepare for the interview, they should have the chance to practice a bit the interview itself. There is already an empty tab for this purpose, remember? Could you make it so, that the user can start a chat (so we need a chatbot connection) with an LLM that has those questions, receives a prompt defininig their persona (i.e. "you are a hiring manager, for the given role, and you need to assess these questions") and the user has the chance to answer and get some kind of evaluation? I would ask the LLM to allow a bit more of back and forth than just those X questions strictly, maybe dig a bit deeper if the user answers too vaguely, and after going through all questions (with between 1 to 4 user answers per question) a final feedback is given to the user.
+
+Before implementing, which steps would you take? How would you add a chatbot with the current API Keys available? Which other modules may be needed? Define a bit your strategy and architecture and let's see what makes sense to do
+
+
+## 2026-11-16 14:02  (session 4920607f)
+
+I like option 2, where more structure is given. Is there a way to make sure the iteration doesnt get stuck forever though, if it always returns follow_up?
+Also, the tool currently allows question generation based on very specific roles. For example, you can give an URL for an opening and the questions are tailored to that role. Would this chatbot also be able to value how good the answer is for what is expected for that role? In other words, not only if it is a good answer, but if the user is a good fit for the job opening. Maybe these can be two separate scores?
+
+
+## 2026-11-16 15:13  (session 4920607f)
+
+Sounds great, go with the implementation. Once finished, review it and test it before I can try it out
+
+
+## 2026-11-16 16:09  (session 4920607f)
+
+Nice work, I like how it looks like. What other features (big or small) do you think would make more sense for this app to have?
+
+
+## 2026-11-16 17:32  (session 4920607f)
+
+Yes, save interview and feedback for logged in users.I like the "end interview" and "download trasncript" buttons too.
+

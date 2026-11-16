@@ -434,7 +434,8 @@ def _ask_llm[T: BaseModel](
 ) -> T:
     """Send one system + user message to `model` and return the answer parsed into `schema`.
 
-    Shared by all LLM features. Uses structured output: .parse() sends `schema` as a JSON
+    Shared by all single-prompt LLM features (the practice interview sends a whole conversation
+    with _ask_llm_messages() below). Uses structured output: .parse() sends `schema` as a JSON
     schema and returns the validated object in .parsed (instead of free text in .content).
 
     `temperature` and `max_tokens` are only sent when given: models that do not support
@@ -442,6 +443,25 @@ def _ask_llm[T: BaseModel](
     accepts providers supporting every parameter sent. If the answer needs more than
     `max_tokens`, it is cut off: raises ValueError with a message for the user.
     The request's cost is recorded in pricing.py (also for cut-off answers, which are billed).
+    """
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    return _ask_llm_messages(messages, schema, model, temperature, max_tokens)
+
+
+def _ask_llm_messages[T: BaseModel](
+    messages: list[dict[str, str]],
+    schema: type[T],
+    model: str = DEFAULT_MODEL,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> T:
+    """Like _ask_llm(), but with a whole conversation: a list of {"role", "content"} messages.
+
+    The only place that sends chat requests. Used directly by the practice interview
+    (interview.py), which sends the conversation so far on every turn.
     """
     # Optional settings: only include the ones the user actually set.
     settings = {}
@@ -454,10 +474,7 @@ def _ask_llm[T: BaseModel](
     try:
         response = client.chat.completions.parse(
             model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            messages=messages,
             response_format=schema,
             **settings,
             # OpenRouter-specific: only route to providers that support every parameter we

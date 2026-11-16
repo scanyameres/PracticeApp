@@ -1,7 +1,9 @@
-"""The logic behind the two buttons, connecting core.py (LLM features) with user_store.py (history).
+"""The logic behind the buttons, connecting core.py / interview.py (LLM features) with user_store.py (history).
 
 - suggest_questions(): "Suggest interview questions"
 - check_fit(): "Check my fit & write a cover letter"
+- finish_interview(): the feedback at the end of a practice interview (the chat turns
+  themselves are interview.reply(), called by landing.py: nothing to save there)
 
 Both work in one of two modes, chosen by the inputs:
 - generic mode: role_title + seniority given, job_description empty;
@@ -16,8 +18,9 @@ and shows the results. That keeps this flow testable with a plain Python script.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 
-from scanya_ae_afa_updated0209_1_6 import core, user_store
+from scanya_ae_afa_updated0209_1_6 import core, interview, user_store
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,11 @@ class QuestionsResult:
     avoided_questions: int
     # Up to 3 most similar other job profiles from the history, with their similarity (0-1).
     closest_roles: list[tuple[dict, float]]
+    # The job description the questions were made from (a URL already downloaded), for the
+    # practice interview; None in generic mode (no posting).
+    job_text: str | None = None
+    # Key of the job profile in the user's history, to save practice interviews to it.
+    history_key: str = ""
 
 
 @dataclass(frozen=True)
@@ -64,10 +72,13 @@ def suggest_questions(
     generic = _is_generic(job_description)
     history_key = _history_key(role_title, seniority, job_description)
 
-    job_text, embedding, similar, avoid = job_description, None, [], []
+    # Job-opening mode: the job text (a URL is downloaded once, here), used for the history,
+    # the LLM call and later the practice interview. Generic mode has no job text.
+    job_text = None if generic else core.resolve_job_text(job_description)
+
+    embedding, similar, avoid = None, [], []
     if username:
-        job_text = _job_text(role_title, seniority, job_description)  # a URL is downloaded once
-        embedding = _embed_for_history(username, role_title, job_text, generic)
+        embedding = _embed_for_history(username, role_title, job_text or "", generic)
         if embedding:
             similar = user_store.find_similar(username, embedding)
             avoid = user_store.questions_to_avoid(similar)
@@ -77,7 +88,6 @@ def suggest_questions(
             role_title, seniority, difficulty, model, temperature, avoid, max_tokens=max_tokens
         )
     else:
-        # job_text is the downloaded page if logged in, else the raw input (core then downloads a URL).
         plan = core.build_preparation_plan_opening(
             job_text, difficulty, model, temperature, avoid, max_tokens=max_tokens
         )
@@ -85,7 +95,8 @@ def suggest_questions(
     # Only real LLM results go into the history, not the backup questions.
     if embedding and not plan.fallback_reason:
         user_store.save_brief(username, history_key, embedding, plan)
-    return QuestionsResult(plan, len(avoid), user_store.closest_other_profiles(similar, history_key))
+    closest = user_store.closest_other_profiles(similar, history_key)
+    return QuestionsResult(plan, len(avoid), closest, job_text, history_key)
 
 
 def check_fit(
@@ -123,6 +134,38 @@ def check_fit(
         label = history_key if generic else job_description.strip()[:60]
         user_store.save_fit(username, history_key, embedding, fit, label)
     return FitResult(fit, similar_fits)
+
+
+def finish_interview(
+    username: str | None,
+    history_key: str,
+    state: interview.InterviewState,
+    model: str,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> bool:
+    """Get the feedback for a finished practice interview; for a logged-in user, save it.
+
+    The interview is saved to the job profile of its brief (`history_key`, from the
+    QuestionsResult). Returns True if it was saved; False if not logged in or the brief is
+    not in the history (e.g. backup questions).
+
+    Raises:
+        ValueError, openai.OpenAIError: if the feedback call fails (nothing is saved then).
+    """
+    feedback = interview.final_feedback(state, model, temperature, max_tokens)
+    if not username:
+        return False
+    record = {
+        "date": datetime.now().isoformat(timespec="seconds"),
+        "answered_questions": len(interview.answered_questions(state)),
+        "total_questions": len(state.questions),
+        "answer_score": feedback.overall_answer_score,
+        "fit_score": feedback.overall_fit_score,
+        "summary": feedback.summary,
+        "transcript": interview.export_markdown(state),  # transcript + full feedback
+    }
+    return user_store.save_interview(username, history_key, record)
 
 
 def _is_generic(job_description: str) -> bool:
